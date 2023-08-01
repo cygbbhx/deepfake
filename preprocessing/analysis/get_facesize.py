@@ -3,14 +3,13 @@ import json
 import h5py
 import cv2
 import numpy as np
-from utils.video_processing import getFrames
 from tqdm import tqdm
 import csv
 
 def get_facesize():
 
-    bbox_path = "bboxes/"
-    bbox_sets = os.listdir(bbox_path)
+    bbox_path = "../bboxes/"
+    bbox_sets = sorted(os.listdir(bbox_path), key=lambda s: int(s.split('_')[-1][:-5]))
     data = []
 
     for bbox_set in bbox_sets:
@@ -48,16 +47,11 @@ def get_facesize():
 
     data.append(['total average', total_avg_w, total_avg_h])
 
-    with open('face_size.csv', 'w', encoding='UTF8', newline='') as f:
+    with open('results/face_size.csv', 'w', encoding='UTF8', newline='') as f:
         writer = csv.writer(f)
-
-        # write the header
         writer.writerow(header)
-
-        # write multiple rows
         writer.writerows(data)
 
 
 if __name__=='__main__':
-
     get_facesize()
