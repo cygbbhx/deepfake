@@ -21,6 +21,7 @@ def getFrames(filePath):
         success, image = cap.read()
         count += 1
     cap.stop()
+    cap.release()
 
     frames = np.stack(images)
     return frames
