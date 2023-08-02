@@ -1,5 +1,5 @@
 deepfake/.log
 deepfake/checkpoints
-preprocessing/bboxes
 preprocessing/h5
 preprocessing/utils/__pycache__/
+preprocessing/png/
