@@ -39,7 +39,7 @@ if __name__ == '__main__':
     logger.addHandler(stream_handler)
 
     # log를 파일에 출력
-    file_handler = logging.FileHandler('sohyun/deepfake/checkpoints/' + opt.LOG_FILENAME)
+    file_handler = logging.FileHandler(opt.LOG_FILENAME)
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 

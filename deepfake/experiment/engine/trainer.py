@@ -25,7 +25,7 @@ class Trainer():
         self.lr_gamma = opt.TRAIN.lr_gamma
         self.steps = 0
 
-        self.checkpoint_dir = opt.LOG_DIR
+        self.checkpoint_dir = opt.CHK_DIR
 
         assert torch.cuda.is_available() == True, \
         "GPU device not detected"
