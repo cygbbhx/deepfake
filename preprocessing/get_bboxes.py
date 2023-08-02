@@ -26,7 +26,7 @@ def getRealVideos(path):
 
 def video2image():
     data_path = '/workspace/NAS2/CIPLAB/dataset/deepfake-detection-challenge'
-    set_paths = [os.path.join(data_path, f"dfdc_train_part_{i}") for i in range(27, 34)]
+    set_paths = [os.path.join(data_path, f"dfdc_train_part_{i}") for i in range(49, 50)]
     
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -43,7 +43,10 @@ def video2image():
         for video in tqdm(video_paths):
 
             frames = getFrames(video)
-            bboxes = detect_facenet_pytorch(detector, frames, 60)
+            try:
+                bboxes = detect_facenet_pytorch(detector, frames, 60)
+            except Exception as e:
+                print(f"Error while processing {video}", e)
 
             dir, video_name = os.path.split(video)
             video_boxes_dict = {}
