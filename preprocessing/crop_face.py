@@ -13,14 +13,14 @@ def crop_faces(set_num):
     metadata = get_metadata(set_num)
     bbox_data = get_bboxdata(set_num)
     
-    os.makedirs(f'png/dfdc_{set_num:02}', exist_ok=True)
-    data_dict = {}
+    os.makedirs(f'/workspace/volume3/sohyun/dfdc_preprocessed/dfdc_{set_num:02}', exist_ok=True)
+    # data_dict = {}
     size = len(metadata.items())
 
     for video, info in tqdm(metadata.items()):
         video_dict = {}
         cropped_frames = np.zeros(shape=(300, 256, 256, 3), dtype=np.uint8)
-        os.makedirs(f'png/dfdc_{set_num:02}/{video}', exist_ok=True)
+        os.makedirs(f'/workspace/volume3/sohyun/dfdc_preprocessed/dfdc_{set_num:02}/{video}', exist_ok=True)
 
         if (info['label'] != "REAL"):
             src_video = info['original']
@@ -53,7 +53,7 @@ def crop_faces(set_num):
                 resized = cv2.resize(cropped, (256,256))
 
                 cropped_frames[count] = resized
-                cv2.imwrite(f"png/dfdc_{set_num:02}/{video}/{count:03}.png", resized)
+                cv2.imwrite(f"/workspace/volume3/sohyun/dfdc_preprocessed/dfdc_{set_num:02}/{video}/{count:03}.jpg", resized)
             
             except:
                 print("Error occured while prcocessing...")
@@ -64,17 +64,7 @@ def crop_faces(set_num):
             count += 1
             success, image = cap.read()
         
-        video_dict['frame'] = cropped_frames
-        video_dict['label'] = 0 if info['label'] == "REAL" else 1
-
-        data_dict[video] = video_dict
         cap.release()
-    
-    with h5py.File(f'h5/train_{set_num}.h5', 'w') as hf:
-        for video_name, data in tqdm(data_dict.items()):
-            grp = hf.create_group(video_name)
-            frames = grp.create_dataset('frames', data=data['frame'], shape=(300, 256, 256, 3), compression='gzip', chunks=True)
-            labels = grp.create_dataset('labels', data=data['label'])
     
     print(f"set_{set_num} conversion finished")
     
@@ -95,5 +85,5 @@ if __name__=='__main__':
 
     args = parser.parse_args()
 
-    for i in range(10):
+    for i in range(50):
         crop_faces(i)

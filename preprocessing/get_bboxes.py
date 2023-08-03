@@ -26,7 +26,7 @@ def getRealVideos(path):
 
 def video2image():
     data_path = '/workspace/NAS2/CIPLAB/dataset/deepfake-detection-challenge'
-    set_paths = [os.path.join(data_path, f"dfdc_train_part_{i}") for i in range(49, 50)]
+    set_paths = [os.path.join(data_path, f"dfdc_train_part_{i}") for i in range(0, 50)]
     
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
