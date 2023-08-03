@@ -98,7 +98,7 @@ class ImageDataset(Dataset):
                          os.path.join(self.path, 'YouTube-real', 'crop_jpg')]
 
         elif self.name == 'dfdc':
-            iter_path = self.[os.path.join(self.path, set) for set in self.mtype]
+            iter_path = [os.path.join(self.path, set) for set in self.mtype]
             
 
         for i, each_path in enumerate(iter_path):
