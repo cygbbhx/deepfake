@@ -33,10 +33,11 @@ def crop_faces(set_num):
         try:
             success, image = cap.read()
             frame_height, frame_width, c = image.shape
-            count = 0
-        except:
-            print(f"Error while processing set{set_num}/{video}")
+        except Exception as e:
+            print(f"Error while processing set{set_num}/{video}", e)
+            return
 
+        count = 0
         while success:
             bbox = bbox_data[src_video][f"{count:03}"]
 
@@ -70,20 +71,6 @@ def crop_faces(set_num):
     
 
 if __name__=='__main__':
-    parser = argparse.ArgumentParser()
 
-    parser.add_argument('--format', 
-                        type=str, 
-                        default='h5', 
-                        choices = ['h5', 'png'],
-                        help='dataset type')
-
-    parser.add_argument('--crop_ratio',
-                        type=float,
-                        default=1.7,
-                        help='crop ratio')
-
-    args = parser.parse_args()
-
-    for i in range(50):
+    for i in range(7, 50):
         crop_faces(i)
