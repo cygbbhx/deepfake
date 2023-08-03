@@ -116,7 +116,7 @@ class ImageDataset(Dataset):
             elif self.name == 'celeb':
                 self.labels += [0 if each_path.find('real') >= 0 else 1 for _ in range(len(video_keys))] # 0: real, 1: fake
             elif self.name == 'dfdc':
-                label_path = os.path.join(iter_path, 'label.json')
+                label_path = os.path.join(each_path, 'label.json')
                 label_file = open(label_path, encoding="UTF-8")
                 label_data = json.loads(label_file.read())
                 self.labels += [0 if label_data[video_key] == "REAL" else 1 for video_key in video_keys]
