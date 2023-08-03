@@ -73,6 +73,8 @@ class ImageDataset(Dataset):
             self.mtype = ['Original', 'Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures']
         elif self.name == 'celeb':
             self.mtype = ['Celeb-real', 'Celeb-synthesis', 'YouTube-real']
+        elif self.name == 'dfdc':
+            self.mtype = [f'dfdc_{i:02}' for i in range(5)] #fix 5 -> 50 when cropping is finished
         
         if transforms is None:
            self.transforms = T.ToTensor()
@@ -94,7 +96,11 @@ class ImageDataset(Dataset):
             iter_path = [os.path.join(self.path, 'Celeb-real', 'crop_jpg'),
                          os.path.join(self.path, 'Celeb-synthesis', 'crop_jpg'),
                          os.path.join(self.path, 'YouTube-real', 'crop_jpg')]
+
+        elif self.name == 'dfdc':
+            iter_path = self.[os.path.join(self.path, set) for set in self.mtype]
             
+
         for i, each_path in enumerate(iter_path):
             video_keys = sorted(os.listdir(each_path))
             if self.is_cross_eval == True:
@@ -114,6 +120,11 @@ class ImageDataset(Dataset):
                 self.labels += [0 if each_path.find('original') >= 0 else 1 for _ in range(len(video_keys))] # 0: real, 1: fake
             elif self.name == 'celeb':
                 self.labels += [0 if each_path.find('real') >= 0 else 1 for _ in range(len(video_keys))] # 0: real, 1: fake
+            elif self.name == 'dfdc':
+                label_path = os.path.join(iter_path, 'label.json')
+                label_file = open(label_path, encoding="UTF-8")
+                label_data = json.loads(label_file.read())
+                self.labels += [0 if label_data[video_key] == "REAL" else 1 for video_key in video_keys]
             self.mtype_index += [i for _ in range(len(video_keys))]
 
     def __len__(self):
