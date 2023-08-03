@@ -3,7 +3,7 @@ from omegaconf import OmegaConf
 from argparse import ArgumentParser
 
 from experiment.engine.trainer import Trainer
-from experiment.dataloader.ImageDataset import get_dataset
+from experiment.dataloader.ImageDataset import get_image_dataset
 from experiment.model.model import XceptionNet
 #from torch.utils.tensorboard import SummaryWriter
 import logging
@@ -17,7 +17,7 @@ if __name__ == '__main__':
     #writer = SummaryWriter()
 
     # Load Dataloader
-    dataloader = get_dataset(opt.DATA)
+    dataloader = get_image_dataset(opt.DATA)
 
     # Model
     model = XceptionNet(opt.MODEL)
