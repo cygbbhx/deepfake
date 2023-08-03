@@ -1,7 +1,8 @@
 EXP_NAME: ff_xception_train
 
 DATA:
-  data_path: sumin/result/h5_result/
+  type: FF
+  data_path: /workspace/ssd1/users/sumin/result/h5_result/ff/use_own_bbox
   image_size: 229
   batch_size: 32
   num_workers: 4
@@ -21,4 +22,5 @@ TRAIN:
   LOG_INTERVAL: 10
   SAVE_INTERVAL: 100
 
-LOG_DIR: 'sohyun/deepfake/.log'
+LOG_FILENAME: '.log/ff_xception'
+CHK_DIR: 'checkpoints/ff/'
