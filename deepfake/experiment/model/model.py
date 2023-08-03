@@ -212,7 +212,7 @@ def XceptionNet(opt):
 
     if opt.pretrained:
         model = Xception()
-        model.load_state_dict(model_zoo.load_url(model_urls['xception'], model_dir='sohyun/deepfake/checkpoints/'))
+        model.load_state_dict(model_zoo.load_url(model_urls['xception'], model_dir='xception_pretrain/'))
         model.fc = nn.Linear(2048, opt.num_classes)
 
     return model
