@@ -16,6 +16,7 @@ import random
 
 
 def get_image_dataset(opt):
+    name = opt.name
 
     augmentation = T.Compose([
         T.Resize((opt.image_size, opt.image_size)),
@@ -31,7 +32,6 @@ def get_image_dataset(opt):
     else:
         data_path = opt.test_data_path
         is_cross_eval = True
-    name = 'celeb' if data_path.find('celeb') >= 0 else 'ff'
 
     # train dataset
     train_dataset = ImageDataset(name, data_path, is_cross_eval, mode='train', transforms=augmentation)
@@ -69,7 +69,7 @@ class ImageDataset(Dataset):
         elif self.name == 'celeb':
             self.mtype = ['Celeb-real', 'Celeb-synthesis', 'YouTube-real']
         elif self.name == 'dfdc':
-            self.mtype = [f'dfdc_{i:02}' for i in range(5)] #fix 5 -> 50 when cropping is finished
+            self.mtype = [f'dfdc_{i:02}' for i in range(8)] #fix 5 -> 50 when cropping is finished
         
         if transforms is None:
            self.transforms = T.ToTensor()
