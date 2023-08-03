@@ -3,6 +3,7 @@ EXP_NAME: dfdc_xception_train
 DATA:
   name: DFDC
   data_path: /workspace/volume3/sohyun/dfdc_preprocessed
+  test_data_path: None
   image_size: 229
   batch_size: 32
   num_workers: 4

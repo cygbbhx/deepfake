@@ -3,6 +3,7 @@ EXP_NAME: ff_xception_train
 DATA:
   name: ff
   data_path: /workspace/ssd1/users/sumin/datasets/ff
+  test_data_path: None
   image_size: 229
   batch_size: 32
   num_workers: 4

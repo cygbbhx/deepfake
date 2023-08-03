@@ -3,6 +3,7 @@ EXP_NAME: celeb_xception
 DATA:
   name: celeb
   data_path: /workspace/ssd1/users/sumin/datasets/celeb
+  test_data_path: None
   image_size: 299
   batch_size: 32
   num_workers: 4
