@@ -1,7 +1,7 @@
 EXP_NAME: ff_xception_train
 
 DATA:
-  type: FF
+  name: FF
   data_path: /workspace/ssd1/users/sumin/result/h5_result/ff/use_own_bbox
   image_size: 229
   batch_size: 32
