@@ -34,23 +34,20 @@ def get_image_dataset(opt):
     name = 'celeb' if data_path.find('celeb') >= 0 else 'ff'
 
     # train dataset
-    train_dataset = ImageDataset(name, data_path, opt.bbox_path, is_cross_eval,
-                                 crop_ratio=opt.crop_ratio, mode='train', transforms=augmentation)
+    train_dataset = ImageDataset(name, data_path, is_cross_eval, mode='train', transforms=augmentation)
     train_dataloader = DataLoader(train_dataset, 
                                   batch_size=opt.batch_size, 
                                   shuffle=True, 
                                   num_workers=opt.num_workers)
     # val dataset
-    val_dataset = ImageDataset(name, data_path, opt.bbox_path, is_cross_eval,
-                                crop_ratio=opt.crop_ratio, mode='val', transforms=augmentation)
+    val_dataset = ImageDataset(name, data_path, is_cross_eval, mode='val', transforms=augmentation)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=opt.batch_size,
                                 shuffle=False,
                                 num_workers=opt.num_workers) 
     
     # test dataset
-    test_dataset = ImageDataset(name, data_path, opt.bbox_path, is_cross_eval,
-                                crop_ratio=opt.crop_ratio, mode='test', transforms=augmentation)
+    test_dataset = ImageDataset(name, data_path, is_cross_eval, mode='test', transforms=augmentation)
     test_dataloader = DataLoader(test_dataset,
                                  batch_size=opt.batch_size,
                                  shuffle=False,
@@ -62,12 +59,10 @@ def get_image_dataset(opt):
 
 # TODO : ImageDataset from jpg file
 class ImageDataset(Dataset):
-    def __init__(self, name, path, bbox_path, is_cross_eval, crop_ratio=1.7, mode='train', transforms=None):
+    def __init__(self, name, path, is_cross_eval, mode='train', transforms=None):
         self.name = name
         self.path = path
-        self.bbox_path = bbox_path
         self.is_cross_eval = is_cross_eval
-        self.crop_ratio = crop_ratio
         self.mode = mode
         if self.name == 'ff':
             self.mtype = ['Original', 'Deepfakes', 'Face2Face', 'FaceSwap', 'NeuralTextures']
@@ -142,8 +137,7 @@ class ImageDataset(Dataset):
     
 if __name__ == "__main__":
     data_path = '/root/datasets/ff'
-    bbox_path = '/root/deepfakedatas'
-    dataset = ImageDataset('ff', data_path, bbox_path, False, crop_ratio=1.7, mode='train')
+    dataset = ImageDataset('ff', data_path, False, mode='train')
     
     print(len(dataset))
     frame = dataset[2560]['frame']
