@@ -164,10 +164,18 @@ class Trainer():
         return loss
 
     def load_model(self, path):
-        checkpoint = torch.load(self.checkpoint_dir + path) 
-        self.model.load_state_dict(checkpoint['model'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        
+        checkpoint = torch.load(os.path.join(self.checkpoint_dir, path)) 
+        self.model.load_state_dict(checkpoint)
+        # self.optimizer.load_state_dict(checkpoint['optimizer'])
+    
+    def freeze_weights(self):
+        for module in self.model.modules():
+            if module._get_name() != 'Linear':
+                for param in module.parameters():
+                    param.requires_grad_(False)
+            elif module._get_name() == 'Linear':
+                for param in module.parameters():
+                    param.requires_grad_(True)
     
     def save_model(self):
         torch.save(self.model.state_dict(), os.path.join(self.checkpoint_dir, f'{self.opt.EXP_NAME}_iter_{self.steps}.pt'))

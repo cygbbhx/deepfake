@@ -13,6 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from torchvision.utils import save_image
 import random
+import json
 
 
 def get_image_dataset(opt):
@@ -57,6 +58,31 @@ def get_image_dataset(opt):
     return dataset
 
 
+def get_test_dataset(opt):
+    name = opt.name
+
+    if opt.test_data_path == 'None':
+        data_path = opt.data_path
+        is_cross_eval = False
+    else:
+        data_path = opt.test_data_path
+        is_cross_eval = True
+
+    augmentation = T.Compose([
+        T.Resize((opt.image_size, opt.image_size)),
+        T.ToTensor(),
+        T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+    ])
+
+    test_dataset = ImageDataset(name, data_path, is_cross_eval, mode='all', transforms=augmentation)
+    test_dataloader = DataLoader(test_dataset,
+                                 batch_size=opt.batch_size,
+                                 shuffle=False,
+                                 num_workers=opt.num_workers)
+    
+    dataset = test_dataloader
+    return dataset
+    
 # TODO : ImageDataset from jpg file
 class ImageDataset(Dataset):
     def __init__(self, name, path, is_cross_eval, mode='train', transforms=None):
@@ -69,7 +95,7 @@ class ImageDataset(Dataset):
         elif self.name == 'celeb':
             self.mtype = ['Celeb-real', 'Celeb-synthesis', 'YouTube-real']
         elif self.name == 'dfdc':
-            self.mtype = [f'dfdc_{i:02}' for i in range(8)] #fix 5 -> 50 when cropping is finished
+            self.mtype = [f'dfdc_{i:02}' for i in range(50)] #fix 5 -> 50 when cropping is finished
         
         if transforms is None:
            self.transforms = T.ToTensor()
@@ -100,14 +126,17 @@ class ImageDataset(Dataset):
             video_keys = sorted(os.listdir(each_path))
             if self.is_cross_eval == True:
                 video_keys = video_keys[:]
+            if self.name == 'dfdc':
+                video_keys.remove('label.json')
                 
-            else:
-                if self.mode == 'train':
-                    video_keys = video_keys[:int(len(video_keys)*0.8)]
-                elif self.mode == 'test':
-                    video_keys = video_keys[int(len(video_keys)*0.8):int(len(video_keys)*0.9)]
-                elif self.mode == 'val':
-                    video_keys = video_keys[int(len(video_keys)*0.9):]
+            if self.mode == 'train':
+                video_keys = video_keys[:int(len(video_keys)*0.8)]
+            elif self.mode == 'test':
+                video_keys = video_keys[int(len(video_keys)*0.8):int(len(video_keys)*0.9)]
+            elif self.mode == 'val':
+                video_keys = video_keys[int(len(video_keys)*0.9):]
+            elif self.mode == 'all':
+                video_keys = video_keys[:]
             
             video_dirs = [os.path.join(each_path, video_key) for video_key in video_keys]
             self.videos += video_dirs
@@ -136,12 +165,12 @@ class ImageDataset(Dataset):
             
     
 if __name__ == "__main__":
-    data_path = '/root/datasets/ff'
-    dataset = ImageDataset('ff', data_path, False, mode='train')
+    data_path = '/workspace/volume3/sohyun/dfdc_preprocessed'
+    dataset = ImageDataset('dfdc', data_path, False, mode='train')
     
     print(len(dataset))
-    frame = dataset[2560]['frame']
-    save_image(frame, 'result.jpg')
+    frame = dataset[0]['frame']
+    print(len(dataset[0]['frame']))
     
     # num_frames = len(dataset)
     # frame_idx = np.random.choice(num_frames, size=100, replace=False)
