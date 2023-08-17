@@ -3,10 +3,11 @@ from omegaconf import OmegaConf
 from argparse import ArgumentParser
 
 from experiment.engine.trainer import Trainer
-from experiment.dataloader.ImageDataset import get_image_dataset
+from experiment.dataloader.ImageDataset import get_test_dataset
 from experiment.model.model import XceptionNet
 #from torch.utils.tensorboard import SummaryWriter
 import logging
+import torch
 
 parser = ArgumentParser('Deepface Training Script')
 parser.add_argument('config', type=str, help='config file path')
@@ -17,10 +18,15 @@ if __name__ == '__main__':
     #writer = SummaryWriter()
 
     # Load Dataloader
-    dataloader = get_image_dataset(opt.DATA)
+    dataloader = get_test_dataset(opt.DATA)
+    
+    device = 'cuda:0'
 
     # Model
     model = XceptionNet(opt.MODEL)
+    model.to(device)
+    checkpoint = torch.load(opt.WEIGHTS) 
+    model.load_state_dict(checkpoint)
 
     # Logger
     # log train/val loss, acc, etc.
@@ -43,11 +49,30 @@ if __name__ == '__main__':
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
-    # BANMo System    
-    trainer = Trainer(opt, dataloader, model, logger)
+    model.eval()
 
-    if (opt.RETRAIN):
-        trainer.load_model(opt.WEIGHTS)
-        trainer.freeze_weights()
-    # train
-    trainer.train()
+    correct = 0
+    total = 0
+
+
+    with torch.no_grad():
+        for data in dataloader:
+            frames = data['frame'].to(device)
+            labels = data['label'].to(device)
+
+            # Forward pass
+            outputs = model(frames)
+
+            # Get the predicted labels
+            _, predicted = torch.max(outputs.data, 1)
+
+            # Count the total number of labels
+            total += labels.size(0)
+
+            # Count the number of correct predictions
+            correct += (predicted == labels).sum().item()
+
+    # Calculate the accuracy
+    accuracy = (correct / total) * 100
+
+    logger.debug(f'----- Test Accuracy for {opt.DATA.name} dataset: {accuracy:.2f}%')
