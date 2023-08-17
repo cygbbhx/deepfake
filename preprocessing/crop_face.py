@@ -6,71 +6,70 @@ import numpy as np
 from tqdm import tqdm
 import argparse
 from utils.image_preprocessing import get_metadata, get_bboxdata, make_bbox_square
+from datetime import datetime
+from pytz import timezone
+
+def process_frame(image, bbox, frame_width, frame_height):
+    processed_bbox = make_bbox_square(bbox, frame_width, frame_height)
+    x1, y1, x2, y2 = processed_bbox
+
+    cropped = image[y1:y2, x1:x2, :].copy()
+    resized = cv2.resize(cropped, (256, 256))
+    return resized
 
 
-def crop_faces(set_num):
-    set_path = f'/workspace/NAS2/CIPLAB/dataset/deepfake-detection-challenge/dfdc_train_part_{set_num}'
-    metadata = get_metadata(set_num)
-    bbox_data = get_bboxdata(set_num)
-    
-    os.makedirs(f'/workspace/volume3/sohyun/dfdc_preprocessed/dfdc_{set_num:02}', exist_ok=True)
-    # data_dict = {}
-    size = len(metadata.items())
+def crop_faces(video_dir, bbox_path, output_dir):
+    bbox_data = get_bboxdata(bbox_path)
+    os.makedirs(output_dir, exist_ok=True)
+    total_iterations = len(bbox_data.items())
 
-    for video, info in tqdm(metadata.items()):
-        video_dict = {}
-        cropped_frames = np.zeros(shape=(300, 256, 256, 3), dtype=np.uint8)
-        os.makedirs(f'/workspace/volume3/sohyun/dfdc_preprocessed/dfdc_{set_num:02}/{video}', exist_ok=True)
-
-        if (info['label'] != "REAL"):
-            src_video = info['original']
-        else:
-            src_video = video
+    for video, info in bbox_data.items():
+        os.makedirs(f'{output_dir}/{video}', exist_ok=True)
         
-        video_path = os.path.join(set_path, video)
+        video_path = os.path.join(video_dir, video)
         cap = cv2.VideoCapture(video_path)
         
-        try:
-            success, image = cap.read()
-            frame_height, frame_width, c = image.shape
-        except Exception as e:
-            print(f"Error while processing set{set_num}/{video}", e)
-            return
-
+        success, image = cap.read()
+        frame_height, frame_width, c = image.shape
         count = 0
+
         while success:
-            bbox = bbox_data[src_video][f"{count:03}"]
+            bbox = bbox_data[video][f"{count:03}"]
 
-            if (bbox == []):
-                bbox = prev_bbox
-            else:
-                prev_bbox = bbox
+            bbox = bbox if bbox != [] else prev_bbox
+            prev_bbox = bbox if bbox != [] else prev_bbox
             
-            try:
-                processed_bbox = make_bbox_square(bbox, frame_width, frame_height)
-                x1, y1, x2, y2 = processed_bbox
+            processed_frame = process_frame(image, bbox, frame_width, frame_height)
 
-                cropped = image[y1:y2, x1:x2, :].copy()
-                resized = cv2.resize(cropped, (256,256))
-
-                cropped_frames[count] = resized
-                cv2.imwrite(f"/workspace/volume3/sohyun/dfdc_preprocessed/dfdc_{set_num:02}/{video}/{count:03}.jpg", resized)
-            
-            except:
-                print("Error occured while prcocessing...")
-                print(f"video: {video}")
-                print(f"processed bbox: {processed_bbox}")
-                print(f"width: {frame_width} height: {frame_height} original bbox: {bbox}")
-
+            cv2.imwrite(f"{output_dir}/{video}/{count:03}.jpg", processed_frame)
             count += 1
+
             success, image = cap.read()
-        
+
         cap.release()
-    
-    print(f"set_{set_num} conversion finished")
+            
     
 
 if __name__=='__main__':
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--video_dir', type=str, help='path to video directory')
+    # parser.add_argument('--bbox_dir', type=str, help='path to bbox data directory')
+    # parser.add_argument('--output_dir', type=str, help='path to output directory')
+    # args = parser.parse_args()
+    data_root ='/workspace/NAS3/CIPLAB/dataset/DeeperForensics_Dataset/DeeperForensics-1.0/manipulated_videos'
+    output_root = '/workspace/volume3/sohyun/dff_preprocessed/manipulated_videos/'
+    m_folders = os.listdir(data_root)
+    b_dir = '/workspace/ssd1/users/sohyun/preprocessing/bboxes/dff/bboxes.json'
 
-    for i in range(7, 50):
-        crop_faces(i)
+    for folder in m_folders:
+        now = datetime.now(timezone('Asia/Seoul'))
+        print(f"start processing {folder} at {now}...")
+        v_dir = os.path.join(data_root, folder)
+        o_dir = os.path.join(output_root, folder)
+
+        #skip if already preprocessed
+        if (os.path.exists(o_dir) and len(os.listdir(v_dir)) == len(os.listdir(o_dir))):
+            continue
+
+        crop_faces(v_dir, b_dir, o_dir)
+        print(f"folder {folder} processing finished")

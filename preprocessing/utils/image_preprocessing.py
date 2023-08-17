@@ -14,8 +14,7 @@ def get_metadata(set_num):
     return metadata
 
 
-def get_bboxdata(set_num):
-    bbox_path = f"bboxes/dfdc_train_part_{set_num}.json"
+def get_bboxdata(bbox_path):
     bbox_file = open(bbox_path, encoding="UTF-8")
     bbox_data = json.loads(bbox_file.read())
     
