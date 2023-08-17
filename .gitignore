@@ -6,3 +6,4 @@ preprocessing/png/
 deepfake/xception_pretrain/
 preprocessing/boxes/
 deepfake/visualize/features/
+deepfake/visualize/results/
