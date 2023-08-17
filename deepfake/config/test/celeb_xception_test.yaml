@@ -1,0 +1,18 @@
+EXP_NAME: celeb_xception_test
+
+DATA:
+  name: celeb
+  data_path: /workspace/ssd1/users/sumin/datasets/celeb
+  test_data_path: None
+  image_size: 229
+  batch_size: 32
+  num_workers: 4
+
+MODEL:
+  name: Xception
+  pretrained: True
+  num_classes: 2
+
+LOG_FILENAME: '.log/celeb_xception_pretrain'
+CHK_DIR: 'checkpoints/celeb/'
+WEIGHTS: 'checkpoints/celeb/celeb_xception_iter_400.pt'
