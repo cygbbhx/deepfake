@@ -1,182 +1,102 @@
-import torch
+import time
 import os
+import torch
+import torch.nn as nn
+import os.path as osp
+import pdb
+import matplotlib.pyplot as plt
 
 class Trainer():
     def __init__(self, opt, data_loader, model, logger):
         self.opt = opt
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.data_loader = data_loader
         self.train_loader = data_loader['train']
         self.val_loader = data_loader['val']
-        self.test_loader = data_loader['test']
-        self.model = model
-        self.optimizer = None
-        self.scheduler = None
+        self.model = model.to(self.device)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=opt.TRAIN.lr)
+        self.loss_function = nn.CrossEntropyLoss().to(self.device)
         self.logger = logger
-        self.criterion = torch.nn.CrossEntropyLoss(reduction='sum')
 
-        self.total_epoch = opt.TRAIN.EPOCH
-        self.log_interval = opt.TRAIN.LOG_INTERVAL
-        self.save_interval = opt.TRAIN.SAVE_INTERVAL
-        self.lr = opt.TRAIN.lr
-        self.momentum = opt.TRAIN.momentum
-        self.weight_decay = opt.TRAIN.weight_decay
-
-        self.lr_step_size = opt.TRAIN.lr_step_size
-        self.lr_gamma = opt.TRAIN.lr_gamma
-        self.steps = 0
-
-        self.checkpoint_dir = opt.CHK_DIR
-
-        assert torch.cuda.is_available() == True, \
-        "GPU device not detected"
+        self.total_epoch = opt.TRAIN.epochs
+        self.log_interval = opt.TRAIN.log_interval
+        self.save_interval = opt.TRAIN.save_interval
+        self.ckpt_dir = opt.TRAIN.ckpt_dir
+        self.load_ckpt_dir = opt.TRAIN.load_ckpt_dir
         
-        self.device = 'cuda'
-
-
+        
     def train(self):
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.lr, momentum=self.momentum, weight_decay=self.weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer,step_size=self.lr_step_size, gamma=self.lr_gamma)
-        
-        self.model.to(self.device)
-
+        if self.load_ckpt_dir != 'None':
+            self.load_model()
+            print('load model from ', self.load_ckpt_dir)
+            return
+        else:
+            print('no ckpt to load!')
+        print('start training')
+        total_steps = 0
+        train_loss_list = []
         for epoch in range(self.total_epoch):
             self.model.train()
-            total_loss = 0
-
-            for data in self.train_loader:
-                self.optimizer.zero_grad()
-
-                # Move data to the device
-                data = {key: value.to(self.device) for key, value in data.items()}
-
+            steps = 0
+            train_loss = 0
+            for data in self.train_loader: # len(self.train_loader) = train data size / batch size  # len(self.train_loader.dataset) = train data size
+                # print('current step: ', steps)
+                steps += 1
+                total_steps += 1
                 # run step
-                loss = self.run_step(data)
-                total_loss += loss.item()
-                
-                self.steps += 1
-
+                train_loss += self.run_step(data) 
                 if self.logger is not None:
-                    if self.steps%self.log_interval == 0:
-                        self.logger.debug(f'Epoch {epoch:03} | Step {self.steps:09} | Loss {loss:09}')
+                    if steps%self.log_interval == 0:
+                        self.logger.info(f"loss: {train_loss.item()/steps:>7f}  [{steps:>5d}/{len(self.train_loader):>5d}]")
     
-                if self.steps%self.save_interval == 0:
-                    self.save_model()
+                if total_steps%self.save_interval == 0:
+                    self.save_model(total_steps, epoch)
                     
-                    
-            self.scheduler.step()
-            average_loss = total_loss / len(self.train_loader)
-
-            self.model.eval()
-            correct = 0
-            total = 0
-
-            with torch.no_grad():
-                for data in self.train_loader:
-                    frames = data['frame'].to(self.device)
-                    labels = data['label'].to(self.device)
-
-                    # Forward pass
-                    outputs = self.model(frames)
-
-                    # Get the predicted labels
-                    _, predicted = torch.max(outputs.data, 1)
-
-                    # Count the total number of labels
-                    total += labels.size(0)
-
-                    # Count the number of correct predictions
-                    correct += (predicted == labels).sum().item()
-
-            # Calculate the accuracy
-            accuracy = (correct / total) * 100
-            self.logger.debug(f'----- Epoch {epoch:03} | Training Accuracy: {accuracy:.2f}% | Average Loss: {average_loss:09}')
-            self.validate()
-            self.test()
+            train_loss_list.append(train_loss/len(self.train_loader))
+            total, correct, val_loss = self.validate()
+            self.logger.info('Epoch: %d/%d, Train loss: %.6f, val loss: %.6f, Accuracy: %.2f' %(epoch+1, self.total_epoch, train_loss/len(self.train_loader), val_loss, 100*correct/total))
+        self.save_model(total_steps, epoch)
+        self.save_train_loss_graph(train_loss_list)
+        self.logger.info('Finished Training : total steps %d' %total_steps)
 
     def validate(self):
+        total, correct, val_loss = 0, 0, 0
         self.model.eval()
-
-        correct = 0
-        total = 0
-        total_loss = 0
-
         with torch.no_grad():
             for data in self.val_loader:
-                frames = data['frame'].to(self.device)
-                labels = data['label'].to(self.device)
-
-                # Forward pass
-                outputs = self.model(frames)
-
-                # Get the predicted labels
-                _, predicted = torch.max(outputs.data, 1)
-
-                # Count the total number of labels
-                total += labels.size(0)
-
-                # Count the number of correct predictions
-                correct += (predicted == labels).sum().item()
-
-                loss = self.criterion(outputs, labels)
-                total_loss += loss.item()
-
-        average_loss = total_loss / len(self.val_loader)
-        # Calculate the accuracy
-        accuracy = (correct / total) * 100
-
-        self.logger.debug(f'----- Validation Accuracy: {accuracy:.2f}% | Validation loss: {average_loss:09}')
-
-
-    def test(self):
-        self.model.eval()
-
-        correct = 0
-        total = 0
-
-        with torch.no_grad():
-            for data in self.test_loader:
-                frames = data['frame'].to(self.device)
-                labels = data['label'].to(self.device)
-
-                # Forward pass
-                outputs = self.model(frames)
-
-                # Get the predicted labels
-                _, predicted = torch.max(outputs.data, 1)
-
-                # Count the total number of labels
-                total += labels.size(0)
-
-                # Count the number of correct predictions
-                correct += (predicted == labels).sum().item()
-
-        # Calculate the accuracy
-        accuracy = (correct / total) * 100
-
-        self.logger.debug(f'----- Test Accuracy: {accuracy:.2f}%')
-
+                output = self.model(data['frame'].to(self.device))
+                
+                _, predicted = torch.max(output.data, 1)
+                # total += data['label'].to(self.device).size(0)
+                total += data['label'].size(0)
+                correct += (predicted == data['label'].to(self.device)).sum().item()
+                val_loss += self.loss_function(output, data['label'].to(self.device)).item()
+        return total, correct, val_loss/len(self.val_loader)
 
     def run_step(self, data):
-        output = self.model(data['frame'])
-        loss = self.criterion(output, data['label'])
-        loss.backward()
-        self.optimizer.step()
-        return loss
+        # forward / loss / backward / update
+        if self.optimizer is not None:
+            self.optimizer.zero_grad()
+        output = self.model(data['frame'].to(self.device))
+        train_loss = self.loss_function(output, data['label'].to(self.device))
+        train_loss.backward()
+        if self.optimizer is not None:
+            self.optimizer.step()
+        return train_loss
 
-    def load_model(self, path):
-        checkpoint = torch.load(os.path.join(self.checkpoint_dir, path)) 
-        self.model.load_state_dict(checkpoint)
-        # self.optimizer.load_state_dict(checkpoint['optimizer'])
-    
-    def freeze_weights(self):
-        for module in self.model.modules():
-            if module._get_name() != 'Linear':
-                for param in module.parameters():
-                    param.requires_grad_(False)
-            elif module._get_name() == 'Linear':
-                for param in module.parameters():
-                    param.requires_grad_(True)
-    
-    def save_model(self):
-        torch.save(self.model.state_dict(), os.path.join(self.checkpoint_dir, f'{self.opt.EXP_NAME}_iter_{self.steps}.pt'))
+    def load_model(self):
+        self.model.load_state_dict(torch.load(self.load_ckpt_dir))
+            
+    def save_model(self, steps, epoch):
+        os.makedirs(self.ckpt_dir, exist_ok=True)
+        torch.save(self.model.state_dict(), osp.join(self.ckpt_dir, f'step{steps}_ep{epoch+1}.pt'))
 
+    def save_train_loss_graph(self, train_loss_list):   
+        epochs = [i+1 for i in range(self.total_epoch)]    
+        train_loss_list = torch.tensor(train_loss_list, device = 'cpu')
+
+        plt.plot(epochs, train_loss_list, label='Train Loss')
+        plt.xlabel('epoch')
+        plt.ylabel('train loss')
+        plt.savefig(osp.join(self.ckpt_dir, 'train_loss.png'))
+        plt.close()

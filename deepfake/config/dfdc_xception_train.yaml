@@ -1,8 +1,9 @@
 EXP_NAME: dfdc_xception_train
 
 DATA:
-  name: dfdc
-  data_path: /workspace/volume3/sohyun/dfdc_preprocessed
+  train_data_name: dfdc
+  train_data_path: /workspace/volume3/sohyun/dfdc_preprocessed
+  test_data_name: None
   test_data_path: None
   image_size: 229
   batch_size: 32
@@ -14,15 +15,16 @@ MODEL:
   num_classes: 2
 
 TRAIN:
-  EPOCH: 15
+  epochs: 15
   lr: 0.001
   momentum: 0.9
   weight_decay: 0.0001
   lr_step_size: 7
   lr_gamma: 0.1
-  LOG_INTERVAL: 40
-  SAVE_INTERVAL: 1000
+  log_interval: 40
+  save_interval: 1000
+  ckpt_dir: 'checkpoints/dfdc/'
+  load_ckpt_dir: None
 
 LOG_FILENAME: '.log/dfdc_xception_pretrain'
-CHK_DIR: 'checkpoints/dfdc/'
 RETRAIN: false
