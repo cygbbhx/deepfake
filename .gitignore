@@ -7,3 +7,4 @@ deepfake/xception_pretrain/
 preprocessing/bboxes/
 deepfake/visualize/features/
 deepfake/visualize/results/
+deepfake/config/*
