@@ -8,4 +8,5 @@ preprocessing/bboxes/
 deepfake/visualize/features/
 deepfake/visualize/results/
 deepfake/config/*
-**/__pycache__/
+__pycache__/
+*.pyc
