@@ -1,3 +1,8 @@
+*
+
+!deepfake/
+!preprocessing/
+
 deepfake/.log
 deepfake/checkpoints
 preprocessing/h5
