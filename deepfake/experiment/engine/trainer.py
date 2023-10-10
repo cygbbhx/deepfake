@@ -5,6 +5,7 @@ import torch.nn as nn
 import os.path as osp
 import pdb
 import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score
 
 class Trainer():
     def __init__(self, opt, data_loader, model, logger):
@@ -47,31 +48,41 @@ class Trainer():
                 train_loss += self.run_step(data) 
                 if self.logger is not None:
                     if steps%self.log_interval == 0:
-                        self.logger.info(f"loss: {train_loss.item()/steps:>7f}  [{steps:>5d}/{len(self.train_loader):>5d}]")
+                        print(f"loss: {train_loss.item()/steps:>7f}  [{steps:>5d}/{len(self.train_loader):>5d}]")
     
                 if total_steps%self.save_interval == 0:
                     self.save_model(total_steps, epoch)
                     
             train_loss_list.append(train_loss/len(self.train_loader))
-            total, correct, val_loss = self.validate()
-            self.logger.info('Epoch: %d/%d, Train loss: %.6f, val loss: %.6f, Accuracy: %.2f' %(epoch+1, self.total_epoch, train_loss/len(self.train_loader), val_loss, 100*correct/total))
+            total, correct, val_loss, auc_score = self.validate()
+            self.logger.info('Epoch: %d/%d, Train loss: %.6f, val loss: %.6f, Accuracy: %.2f AUC score: %.2f' %(epoch+1, self.total_epoch, train_loss/len(self.train_loader), val_loss, 100*correct/total, auc_score))
         self.save_model(total_steps, epoch)
         self.save_train_loss_graph(train_loss_list)
         self.logger.info('Finished Training : total steps %d' %total_steps)
 
-    def validate(self):
+    def validate(self, post_function=nn.Softmax(dim=1)):
         total, correct, val_loss = 0, 0, 0
         self.model.eval()
         with torch.no_grad():
+            pred = []
+            true = []
+
             for data in self.val_loader:
                 output = self.model(data['frame'].to(self.device))
+                output = post_function(output)
                 
                 _, predicted = torch.max(output.data, 1)
+                
+                pred += output.data[:, 1].cpu().tolist()
+                true += data['label'].cpu()
+
                 # total += data['label'].to(self.device).size(0)
                 total += data['label'].size(0)
                 correct += (predicted == data['label'].to(self.device)).sum().item()
                 val_loss += self.loss_function(output, data['label'].to(self.device)).item()
-        return total, correct, val_loss/len(self.val_loader)
+            
+            auc_score = roc_auc_score(true, pred) * 100
+        return total, correct, val_loss/len(self.val_loader), auc_score
 
     def run_step(self, data):
         # forward / loss / backward / update

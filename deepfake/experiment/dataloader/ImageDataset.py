@@ -13,6 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from torchvision.utils import save_image
 import random
+import torch
 import json
 
 
@@ -57,6 +58,66 @@ def get_image_dataset(opt):
                                 num_workers=opt.num_workers)
 
     val_dataset = train_data_class(opt.train_data_path, mode='val', transforms=augmentation)
+    val_dataloader = DataLoader(val_dataset,
+                                batch_size=opt.batch_size,
+                                shuffle=False,
+                                num_workers=opt.num_workers) 
+
+    test_dataset = test_data_class(test_data_path, mode='test', transforms=augmentation)
+    test_dataloader = DataLoader(test_dataset,
+                                batch_size=opt.batch_size,
+                                shuffle=False,
+                                num_workers=opt.num_workers)
+
+    dataset = {'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
+    return dataset
+
+
+def get_multiple_datasets(opt, datasets=['ff', 'celeb', 'vfhq', 'dff']):
+
+    augmentation = T.Compose([
+        T.Resize((opt.image_size, opt.image_size)),
+        T.ToTensor(),
+        T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+        ])
+    
+    test_data_name = 'dfdc'
+    test_data_path = '/workspace/volume3/sohyun/dfdc_preprocessed'
+
+    dataset_mapping = {
+        'ff': FFImageDataset,
+        'celeb': CelebImageDataset,
+        'dfdc': DFDCImageDataset,
+        'vfhq': VFHQImageDataset,
+        'dff' : DFFImageDataset
+    }
+
+    # # Specify the dataset name
+    # train_data_name = opt.train_data_name
+    # assert train_data_name in dataset_mapping, f"Unsupported dataset name: {train_data_name}"
+    # assert test_data_name in dataset_mapping, f"Unsupported dataset name: {test_data_name}"
+
+    # Create the appropriate dataset class based on the name
+    # train_data_class = dataset_mapping[train_data_name]
+    test_data_class = dataset_mapping[test_data_name]
+    train_datasets = []
+    val_datasets = []
+
+    for dataset in datasets:
+        train_data_class = dataset_mapping[dataset]
+        train_dataset = train_data_class(mode='train', transforms=augmentation)
+        val_dataset = train_data_class(mode='val', transforms=augmentation)
+
+        train_datasets.append(train_dataset)
+        val_datasets.append(val_dataset)
+
+    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
+    train_dataloader = DataLoader(train_dataset, 
+                                batch_size=opt.batch_size, 
+                                shuffle=True, 
+                                num_workers=opt.num_workers)
+
+    val_dataset = torch.utils.data.ConcatDataset(val_datasets)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=opt.batch_size,
                                 shuffle=False,
@@ -138,7 +199,7 @@ class BaseImageDataset(Dataset):
 
 
 class FFImageDataset(BaseImageDataset):
-    def __init__(self, path, mode='train', transforms=None):
+    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/ff', mode='train', transforms=None):
         super().__init__('ff', path, mode, transforms)
 
         self.iter_path = [os.path.join(self.path, 'original_sequences', 'raw', 'crop_jpg'), 
@@ -154,15 +215,15 @@ class FFImageDataset(BaseImageDataset):
         return [0 if video_dir.find('original') >= 0 else 1 for _ in range(len(video_keys))]
 
 class DFFImageDataset(BaseImageDataset):
-    def __init__(self, path, mode='train', transforms=None):
+    def __init__(self, path='/workspace/volume3/sohyun/dff_preprocessed', mode='train', transforms=None):
         super().__init__('dff', path, mode, transforms)
         folders = os.listdir(os.path.join(self.path, 'manipulated_videos'))
 
         self.iter_path = [os.path.join(self.path, 'manipulated_videos', folder) for folder in folders]
-        self.iter_path += os.path.join(self.path, 'original_sequences/raw/crop_jpg')    
+        self.iter_path += [os.path.join(self.path, 'original_sequences/raw/crop_jpg')]
               
         self.mtype = folders
-        self.mtype += 'Original'
+        self.mtype += ['Original']
         self._load_data()
 
     def _get_labels(self, video_dir, video_keys):
@@ -170,7 +231,7 @@ class DFFImageDataset(BaseImageDataset):
 
 
 class CelebImageDataset(BaseImageDataset):
-    def __init__(self, path, mode='train', transforms=None):
+    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/celeb', mode='train', transforms=None):
         super().__init__('celeb', path, mode, transforms)
         self.iter_path = [os.path.join(self.path, 'Celeb-real', 'crop_jpg'),
                             os.path.join(self.path, 'Celeb-synthesis', 'crop_jpg'),
@@ -200,7 +261,7 @@ class CelebImageDataset(BaseImageDataset):
 
 
 class DFDCImageDataset(BaseImageDataset):
-    def __init__(self, path, mode='train', transforms=None):
+    def __init__(self, path='/workspace/volume3/sohyun/dfdc_preprocessed', mode='train', transforms=None):
         super().__init__('dfdc', path, mode, transforms)
         self.mtype = [f'dfdc_{i:02}' for i in range(50)]
         self.iter_path = [os.path.join(self.path, set) for set in self.mtype]
@@ -219,7 +280,7 @@ class DFDCImageDataset(BaseImageDataset):
 
 
 class VFHQImageDataset(BaseImageDataset):
-    def __init__(self, path, mode='train', transforms=None):
+    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/vfhq', mode='train', transforms=None):
         super().__init__('vfhq', path, mode, transforms)
         self.iter_path = [os.path.join(self.path, 'crop_jpg')]
         self._load_data()
