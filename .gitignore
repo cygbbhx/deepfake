@@ -1,10 +1,11 @@
-*
+/*
 
 !deepfake/
 !preprocessing/
 
 deepfake/.log
 deepfake/checkpoints
+deepfake/experiment/model/pretrained/*
 preprocessing/h5
 preprocessing/utils/__pycache__/
 preprocessing/png/
@@ -15,3 +16,5 @@ deepfake/visualize/results/
 deepfake/config/*
 __pycache__/
 *.pyc
+*.pt
+*.pth
