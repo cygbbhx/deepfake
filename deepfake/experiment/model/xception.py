@@ -25,6 +25,7 @@ import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 from torch.nn import init
 import torch
+from experiment.engine.loss import SimCLR_Loss
 
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -36,6 +37,30 @@ model_urls = {
     'xception':'http://data.lip6.fr/cadene/pretrainedmodels/xception-43020ad28.pth'
 }
 
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+        
+    def forward(self, x):
+        return x
+    
+class Normalize(nn.Module):
+    def __init__(self):
+        super(Normalize, self).__init__()
+        
+    def forward(self, x):
+        x = F.normalize(x, dim=1)
+        return x
+    
+class NormalizeFC(nn.Module):
+    def __init__(self, num_classes=2):
+        super(NormalizeFC, self).__init__()
+        self.fc = nn.Linear(2048, num_classes)
+        
+    def forward(self, x):
+        x = F.normalize(x, dim=1)
+        x = self.fc(x)
+        return x
 
 class SeparableConv2d(nn.Module):
     def __init__(self,in_channels,out_channels,kernel_size=1,stride=1,padding=0,dilation=1,bias=False):
@@ -150,7 +175,7 @@ class Xception(nn.Module):
         self.bn4 = nn.BatchNorm2d(2048)
 
         self.fc = nn.Linear(2048, num_classes)
-
+        self.criterion = SimCLR_Loss()
 
 
         #------- init weights --------
@@ -167,7 +192,7 @@ class Xception(nn.Module):
 
 
 
-    def forward(self, x):
+    def forward(self, x, y=None):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -201,19 +226,41 @@ class Xception(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc(x)
 
+        if (y is not None):
+            x = self.criterion(x, y)
+
         return x
 
 def XceptionNet(opt):
     """
     Construct Xception.
     """
+    print("\n=> Building model...")
 
     model = Xception(opt.num_classes)
 
     if opt.pretrained:
+        path = opt.get('weights', 'experiment/model/pretrained/xception-43020ad28.pth')
+        freeze = opt.get('freeze', False)
+        encoder_only = opt.get('encoder_only', False)
+
+        print(f'Loading pretrained weights from {path}')
         model = Xception()
-        model.load_state_dict(model_zoo.load_url(model_urls['xception'], model_dir='xception_pretrain/'))
+        weights = torch.load(path)
+        model.load_state_dict(weights, strict=False)
         model.fc = nn.Linear(2048, opt.num_classes)
+
+        if freeze:
+            print("--- Freezing encoder ...\n")
+            # freeze encoder
+            for para in model.parameters():
+                para.requires_grad = False
+
+            model.fc = NormalizeFC(opt.num_classes)
+
+        if encoder_only:
+            print("--- Removing the last layer, training encoder\n")
+            model.fc = Normalize()       
 
     return model
 

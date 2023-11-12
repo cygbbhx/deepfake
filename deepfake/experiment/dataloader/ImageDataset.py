@@ -16,23 +16,51 @@ import random
 import torch
 import json
 
+class TwoCropTransform:
+    """Create two crops of the same image"""
+    def __init__(self, transform):
+        self.transform = transform
+
+    def __call__(self, x):
+        return [self.transform(x), self.transform(x)]
+
+def sampleFrame(video_dir, transforms):
+    frame_keys = sorted(os.listdir(video_dir))
+    frame_key = random.choice(frame_keys)
+    frame = Image.open(os.path.join(video_dir, frame_key))
+    frame = transforms(frame)
+
+    return frame
+
+
 
 def get_image_dataset(opt):
 
-    augmentation = T.Compose([
-        T.Resize((opt.image_size, opt.image_size)),
-        T.ToTensor(),
-        T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-        ])
+    aug_list = [
+                T.Resize((opt.image_size, opt.image_size)),
+                T.ToTensor(),
+                T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+                ]
+    
+    if (opt.augSelf):
+        randomAug = [T.RandomHorizontalFlip(),
+                     T.RandomApply([
+                         T.ColorJitter(0.4, 0.4, 0.4, 0.1)
+                     ], p=0.8),
+                     T.RandomGrayscale(p=0.2)] 
+        aug_list[1:1] = randomAug
+
+    augmentation = T.Compose(aug_list)
+
+    if (opt.augSelf):
+        augmentation = TwoCropTransform(augmentation)
     
     # For cross evaluation
     # test_data_path에 경로 있으면 cross evaluation
-    if opt.test_data_path == 'None' or opt.get("test_data_path", None) is None:
+    if opt.get("test_data_name", None) is None:
         test_data_name = opt.train_data_name
-        test_data_path = opt.train_data_path
     else:
         test_data_name = opt.test_data_name
-        test_data_path = opt.test_data_path
 
     dataset_mapping = {
         'ff': FFImageDataset,
@@ -51,19 +79,19 @@ def get_image_dataset(opt):
     train_data_class = dataset_mapping[train_data_name]
     test_data_class = dataset_mapping[test_data_name]
     
-    train_dataset = train_data_class(opt.train_data_path, mode='train', transforms=augmentation)
+    train_dataset = train_data_class(mode='train', transforms=augmentation)
     train_dataloader = DataLoader(train_dataset, 
                                 batch_size=opt.batch_size, 
                                 shuffle=True, 
                                 num_workers=opt.num_workers)
 
-    val_dataset = train_data_class(opt.train_data_path, mode='val', transforms=augmentation)
+    val_dataset = train_data_class(mode='val', transforms=augmentation)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=opt.batch_size,
-                                shuffle=False,
+                                shuffle=True,
                                 num_workers=opt.num_workers) 
 
-    test_dataset = test_data_class(test_data_path, mode='test', transforms=augmentation)
+    test_dataset = test_data_class(mode='test', transforms=augmentation)
     test_dataloader = DataLoader(test_dataset,
                                 batch_size=opt.batch_size,
                                 shuffle=False,
@@ -123,7 +151,7 @@ def get_multiple_datasets(opt, datasets=['ff', 'celeb', 'vfhq', 'dff']):
                                 shuffle=False,
                                 num_workers=opt.num_workers) 
 
-    test_dataset = test_data_class(test_data_path, mode='test', transforms=augmentation)
+    test_dataset = test_data_class(mode='test', transforms=augmentation)
     test_dataloader = DataLoader(test_dataset,
                                 batch_size=opt.batch_size,
                                 shuffle=False,
@@ -170,6 +198,25 @@ class BaseImageDataset(Dataset):
             self.labels += self._get_labels(video_dir, final_video_keys)
             self.mtype_index += [i for _ in range(len(final_video_keys))]
 
+        ## OVERSAMPLING
+        # Count the number of videos with label 0 and 1
+        if self.mode == 'train':
+            count_label_0 = self.labels.count(0)
+            count_label_1 = self.labels.count(1)
+
+            duplicateNum = count_label_1 // count_label_0 - 1
+            additional_samples = count_label_1 % count_label_0
+
+            # Oversample video keys with label 0
+            real_videos = [video_dir for video_dir, label in zip(self.videos, self.labels) if label == 0]
+            oversampled_videos = real_videos * duplicateNum + random.sample(real_videos, additional_samples)
+            self.labels += [0] * (len(oversampled_videos))
+
+            print(f"=> Oversampled REAL Data from Real : Fake {count_label_0} : {count_label_1} to {count_label_0 + len(oversampled_videos)} : {count_label_1}")
+            
+            self.mtype_index += [i for _ in range(len(self.videos), len(self.videos) + len(oversampled_videos))]
+            self.videos += [video_dir for video_dir in oversampled_videos]
+
     def __len__(self):
         return len(self.videos)
     
@@ -199,7 +246,7 @@ class BaseImageDataset(Dataset):
 
 
 class FFImageDataset(BaseImageDataset):
-    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/ff', mode='train', transforms=None):
+    def __init__(self, path='/workspace/dataset2/ff', mode='train', transforms=None):
         super().__init__('ff', path, mode, transforms)
 
         self.iter_path = [os.path.join(self.path, 'original_sequences', 'raw', 'crop_jpg'), 
@@ -213,9 +260,74 @@ class FFImageDataset(BaseImageDataset):
 
     def _get_labels(self, video_dir, video_keys):
         return [0 if video_dir.find('original') >= 0 else 1 for _ in range(len(video_keys))]
+    
+    def _get_mtype(self, video_dir):
+        video_mtype = 0
+        for i, mtype in enumerate(self.mtype):
+            if video_dir.find(mtype) >= 0:
+                video_mtype = i
+                break        
+        return video_mtype
+    
+    def _get_identity(self, video_mtype, video_dir):
+        # default identity = origin
+        video_identity = video_dir.split('/')[-1]
+        # get the source identity of face using file format target_source 
+        if self.mtype[video_mtype] == 'Deepfakes' or self.mtype[video_mtype] == 'FaceSwap':
+            video_identity = video_dir.split('/')[-1].split('_')[-1]
+        elif self.mtype[video_mtype] == 'Face2Face' or self.mtype[video_mtype] == 'NeuralTextures':
+            # use target identity for else since face2face and NT do not change identity
+            video_identity = video_dir.split('/')[-1].split('_')[0]
+
+        video_identity = int(video_identity)
+        return video_identity
+
+
+    # def __getitem__(self, index):
+    #     video_dir = self.videos[index]
+    #     video_mtype = self._get_mtype(video_dir)
+    #     video_identity = self._get_identity(video_mtype, video_dir)
+
+    #     #remove .jpg and convert into int
+    #     current_label = self.labels[index]
+    #     positive_indices = []
+    #     negative_indices = []
+    #     negative_extras = []
+
+    #     for i, label in enumerate(self.labels):
+    #         target_video = self.videos[i]
+    #         target_mtype = self._get_mtype(target_video)
+    #         target_id = self._get_identity(target_mtype, target_video)
+
+    #         if label == current_label and target_id != video_identity:
+    #             positive_indices.append(i)
+    #         if label != current_label:
+    #             if target_id == video_identity:
+    #                 negative_indices.append(i)
+    #             else:
+    #                 negative_extras.append(i)
+
+    #     if len(negative_indices) == 0:
+    #         #print(f"Data: {video_dir}\n => negative pairs not exist, using negative with different id")
+    #         negative_indices = negative_extras
+        
+    #     positive_index = random.choice(positive_indices)
+    #     positive_video_dir = self.videos[positive_index]
+
+    #     negative_index = random.choice(negative_indices)
+    #     negative_video_dir = self.videos[negative_index]
+
+    #     anchor_frame = sampleFrame(video_dir, self.transforms)
+    #     positive_frame = sampleFrame(positive_video_dir, self.transforms)
+    #     negative_frame = sampleFrame(negative_video_dir, self.transforms)
+
+    #     frames = [anchor_frame, positive_frame, negative_frame]
+
+    #     data = {'frames': frames, 'label': self.labels[index]}
+    #     return data
 
 class DFFImageDataset(BaseImageDataset):
-    def __init__(self, path='/workspace/volume3/sohyun/dff_preprocessed', mode='train', transforms=None):
+    def __init__(self, path='/workspace/dataset1/dff_preprocessed', mode='train', transforms=None):
         super().__init__('dff', path, mode, transforms)
         folders = os.listdir(os.path.join(self.path, 'manipulated_videos'))
 
@@ -231,7 +343,7 @@ class DFFImageDataset(BaseImageDataset):
 
 
 class CelebImageDataset(BaseImageDataset):
-    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/celeb', mode='train', transforms=None):
+    def __init__(self, path='/workspace/dataset2/celeb', mode='train', transforms=None):
         super().__init__('celeb', path, mode, transforms)
         self.iter_path = [os.path.join(self.path, 'Celeb-real', 'crop_jpg'),
                             os.path.join(self.path, 'Celeb-synthesis', 'crop_jpg'),
@@ -261,7 +373,7 @@ class CelebImageDataset(BaseImageDataset):
 
 
 class DFDCImageDataset(BaseImageDataset):
-    def __init__(self, path='/workspace/volume3/sohyun/dfdc_preprocessed', mode='train', transforms=None):
+    def __init__(self, path='/workspace/dataset1/dfdc_preprocessed', mode='train', transforms=None):
         super().__init__('dfdc', path, mode, transforms)
         self.mtype = [f'dfdc_{i:02}' for i in range(50)]
         self.iter_path = [os.path.join(self.path, set) for set in self.mtype]
@@ -280,7 +392,7 @@ class DFDCImageDataset(BaseImageDataset):
 
 
 class VFHQImageDataset(BaseImageDataset):
-    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/vfhq', mode='train', transforms=None):
+    def __init__(self, path='/workspace/dataset2/vfhq', mode='train', transforms=None):
         super().__init__('vfhq', path, mode, transforms)
         self.iter_path = [os.path.join(self.path, 'crop_jpg')]
         self._load_data()

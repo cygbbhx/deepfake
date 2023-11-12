@@ -1,142 +1,20 @@
-import os
-import cv2
-import h5py
-from PIL import Image
-import matplotlib.pyplot as plt
-import multiprocessing as mp
-import concurrent.futures
-import pandas as pd
-import numpy as np
-import time
-import pdb
+import os 
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
-from torchvision.utils import save_image
 import random
 import torch
-import json
-
-
-def get_video_dataset(opt):
-
-    augmentation = T.Compose([
-        T.Resize((opt.image_size, opt.image_size)),
-        T.ToTensor(),
-        T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-        ])
-    
-    # For cross evaluation
-    # test_data_path에 경로 있으면 cross evaluation
-    if opt.test_data_path == 'None' or opt.get("test_data_path", None) is None:
-        test_data_name = opt.train_data_name
-        test_data_path = opt.train_data_path
-    else:
-        test_data_name = opt.test_data_name
-        test_data_path = opt.test_data_path
-
-    dataset_mapping = {
-        'ff': FFVideoDataset,
-        'celeb': CelebVideoDataset,
-        'dfdc': DFDCVideoDataset,
-        'vfhq': VFHQVideoDataset,
-        'dff' : DFFVideoDataset
-    }
-
-    # Specify the dataset name
-    train_data_name = opt.train_data_name
-    assert train_data_name in dataset_mapping, f"Unsupported dataset name: {train_data_name}"
-    assert test_data_name in dataset_mapping, f"Unsupported dataset name: {test_data_name}"
-
-    # Create the appropriate dataset class based on the name
-    train_data_class = dataset_mapping[train_data_name]
-    test_data_class = dataset_mapping[test_data_name]
-    
-    train_dataset = train_data_class(opt.train_data_path, mode='train', transforms=augmentation)
-    train_dataloader = DataLoader(train_dataset, 
-                                batch_size=opt.batch_size, 
-                                shuffle=True, 
-                                num_workers=opt.num_workers)
-
-    val_dataset = train_data_class(opt.train_data_path, mode='val', transforms=augmentation)
-    val_dataloader = DataLoader(val_dataset,
-                                batch_size=opt.batch_size,
-                                shuffle=False,
-                                num_workers=opt.num_workers) 
-
-    test_dataset = test_data_class(test_data_path, mode='test', transforms=augmentation)
-    test_dataloader = DataLoader(test_dataset,
-                                batch_size=opt.batch_size,
-                                shuffle=False,
-                                num_workers=opt.num_workers)
-
-    dataset = {'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
-    return dataset
-
-
-def get_multiple_datasets(opt, datasets=['ff', 'celeb', 'vfhq', 'dff']):
-
-    augmentation = T.Compose([
-        T.Resize((opt.image_size, opt.image_size)),
-        T.ToTensor(),
-        T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-        ])
-    
-    test_data_name = 'dfdc'
-    test_data_path = '/workspace/volume3/sohyun/dfdc_preprocessed'
-
-    dataset_mapping = {
-        'ff': FFVideoDataset,
-        'celeb': CelebVideoDataset,
-        'dfdc': DFDCVideoDataset,
-        'vfhq': VFHQVideoDataset,
-        'dff' : DFFVideoDataset
-    }
-
-    # # Specify the dataset name
-    # train_data_name = opt.train_data_name
-    # assert train_data_name in dataset_mapping, f"Unsupported dataset name: {train_data_name}"
-    # assert test_data_name in dataset_mapping, f"Unsupported dataset name: {test_data_name}"
-
-    # Create the appropriate dataset class based on the name
-    # train_data_class = dataset_mapping[train_data_name]
-    test_data_class = dataset_mapping[test_data_name]
-    train_datasets = []
-    val_datasets = []
-
-    for dataset in datasets:
-        train_data_class = dataset_mapping[dataset]
-        train_dataset = train_data_class(mode='train', transforms=augmentation)
-        val_dataset = train_data_class(mode='val', transforms=augmentation)
-
-        train_datasets.append(train_dataset)
-        val_datasets.append(val_dataset)
-
-    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
-    train_dataloader = DataLoader(train_dataset, 
-                                batch_size=opt.batch_size, 
-                                shuffle=True, 
-                                num_workers=opt.num_workers)
-
-    val_dataset = torch.utils.data.ConcatDataset(val_datasets)
-    val_dataloader = DataLoader(val_dataset,
-                                batch_size=opt.batch_size,
-                                shuffle=False,
-                                num_workers=opt.num_workers) 
-
-    test_dataset = test_data_class(test_data_path, mode='test', transforms=augmentation)
-    test_dataloader = DataLoader(test_dataset,
-                                batch_size=opt.batch_size,
-                                shuffle=False,
-                                num_workers=opt.num_workers)
-
-    dataset = {'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
-    return dataset
+from PIL import Image
+import json 
+import numpy as np
 
 class BaseVideoDataset(Dataset):
-    def __init__(self, name, path, mode='train', transforms=None):
+    def __init__(self, name, path, mode='train', transforms=None, **kwargs):
         self.name = name
         self.path = path
         self.mode = mode
+
+        self.num_samples = kwargs['num_samples']
+        self.interval = kwargs['interval']
         
         if transforms is None:
             self.transforms = T.ToTensor()
@@ -147,6 +25,8 @@ class BaseVideoDataset(Dataset):
         self.labels = []
         
         self.mtype_index = []
+        self.clips = []
+        self.clip_src_idx = []
         
         # Subclasses should define this during init
         self.mtype = None  
@@ -170,19 +50,77 @@ class BaseVideoDataset(Dataset):
             self.labels += self._get_labels(video_dir, final_video_keys)
             self.mtype_index += [i for _ in range(len(final_video_keys))]
 
+        if self.mode == 'train':
+            self._oversample()
+        else:
+            self._get_clips()
+
+    def _oversample(self):
+        ## OVERSAMPLING
+        # Count the number of videos with label 0 and 1
+        count_label_0 = self.labels.count(0)
+        count_label_1 = self.labels.count(1)
+
+        duplicateNum = count_label_1 // count_label_0 - 1
+        additional_samples = count_label_1 % count_label_0
+
+        # Oversample video keys with label 0
+        real_videos = [video_dir for video_dir, label in zip(self.videos, self.labels) if label == 0]
+        oversampled_videos = real_videos * duplicateNum + random.sample(real_videos, additional_samples)
+        self.labels += [0] * (len(oversampled_videos))
+
+        # print(f'REAL: {count_label_0} : FAKE: {count_label_1} found')
+        # print(f'oversampled {len(oversampled_videos)}')
+
+        #This should be fixed ... mtype is not used anyway tho
+        #self.mtype_index += [self.mtype_index for _ in range(len(self.videos), len(self.videos) + len(oversampled_videos))]
+        self.videos += [video_dir for video_dir in oversampled_videos]         
+
+    def _get_clips(self):
+        for i, video_dir in enumerate(self.videos):
+            frame_keys = sorted(os.listdir(video_dir))
+            frame_count = len(frame_keys)
+            num_samples = self.num_samples
+            interval = self.interval # UNIFORM :1,2 / SPREAD: max(total_frames // num_samples, 1)
+            max_length = (num_samples - 1) * self.interval + num_samples
+
+            for starting_point in range(0, frame_count, (num_samples-1)*interval + num_samples):
+                if (interval == 0) or (frame_count <= max_length):
+                    sampled_keys = frame_keys[starting_point:starting_point+num_samples]
+                else:
+                    sampled_indices = np.arange(starting_point, frame_count, interval)[:num_samples]
+                    sampled_keys = [frame_keys[idx] for idx in sampled_indices]
+
+                if len(sampled_keys) < num_samples:
+                    break
+
+                self.clips += [sampled_keys]
+                self.clip_src_idx.append(i)
+
     def __len__(self):
-        return len(self.videos)
+        if self.mode == 'train':
+            return len(self.videos)
+        else:
+            return len(self.clips)
     
     def __getitem__(self, index):
-        video_dir = self.videos[index]
-        frame_keys = sorted(os.listdir(video_dir))
-        total_frames = len(frame_keys)
-        num_samples = 64
+        if self.mode == 'train':
+            video_dir = self.videos[index]
+            frame_keys = sorted(os.listdir(video_dir))
+            frame_count = len(frame_keys)
+            clip_length = (self.num_samples - 1) * self.interval + self.num_samples
 
-        interval = max(total_frames // num_samples, 1)
-
-        # Generate the sample indices
-        sampled_keys = np.arange(0, total_frames, interval)[:num_samples]
+            if (self.interval == 0) or (frame_count <= clip_length):
+                starting_point = random.randint(0, frame_count - num_samples)
+                sampled_keys = frame_keys[starting_point:starting_point+self.num_samples]
+            else:
+                starting_point = random.randint(0, frame_count - clip_length)
+                sampled_indices = np.arange(starting_point, frame_count, self.interval)[:self.num_samples]
+                sampled_keys = [frame_keys[idx] for idx in sampled_indices]
+        else:
+            src_idx = self.clip_src_idx[index]
+            video_dir = self.videos[src_idx]
+            sampled_keys = self.clips[index]
 
         frames = []
         for frame_key in sampled_keys:
@@ -190,8 +128,20 @@ class BaseVideoDataset(Dataset):
             frame = self.transforms(frame)
             frames.append(frame)
 
-        frames_tensor = torch.stack(frames, dim=0)  # Stack frames along a new dimension (batch dimension)
-        data = {'frames': frames_tensor, 'label': self.labels[index]}
+        # If contrastive learning, we get 2 tensors of frame
+        if isinstance(frame, list):
+            frames_tensor1 = torch.stack([frame1 for frame1, frame2 in frames], dim=0).transpose(0,1)
+            frames_tensor2 = torch.stack([frame2 for frame1, frame2 in frames], dim=0).transpose(0,1)
+
+            frame_data = [frames_tensor1, frames_tensor2]
+        else:
+            frame_data = torch.stack(frames, dim=0).transpose(0,1)
+
+        if self.mode == 'train':
+            data = {'frame': frame_data, 'label': self.labels[index]}
+        else:
+            data = {'video': src_idx, 'frame': frame_data, 'label': self.labels[src_idx]}
+
         return data
 
     def _get_splits(self, video_keys):
@@ -211,8 +161,8 @@ class BaseVideoDataset(Dataset):
 
 
 class FFVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/ff', mode='train', transforms=None):
-        super().__init__('ff', path, mode, transforms)
+    def __init__(self, path='/workspace/dataset2/ff', mode='train', transforms=None, **kwargs):
+        super().__init__('ff', path, mode, transforms, **kwargs)
 
         self.iter_path = [os.path.join(self.path, 'original_sequences', 'raw', 'crop_jpg'), 
                             os.path.join(self.path, 'manipulated_sequences', 'Deepfakes', 'raw', 'crop_jpg'),
@@ -227,8 +177,8 @@ class FFVideoDataset(BaseVideoDataset):
         return [0 if video_dir.find('original') >= 0 else 1 for _ in range(len(video_keys))]
 
 class DFFVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/volume3/sohyun/dff_preprocessed', mode='train', transforms=None):
-        super().__init__('dff', path, mode, transforms)
+    def __init__(self, path='/workspace/dataset1/dff_preprocessed', mode='train', transforms=None, **kwargs):
+        super().__init__('dff', path, mode, transforms, **kwargs)
         folders = os.listdir(os.path.join(self.path, 'manipulated_videos'))
 
         self.iter_path = [os.path.join(self.path, 'manipulated_videos', folder) for folder in folders]
@@ -243,8 +193,8 @@ class DFFVideoDataset(BaseVideoDataset):
 
 
 class CelebVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/celeb', mode='train', transforms=None):
-        super().__init__('celeb', path, mode, transforms)
+    def __init__(self, path='/workspace/dataset2/celeb', mode='train', transforms=None, **kwargs):
+        super().__init__('celeb', path, mode, transforms, **kwargs)
         self.iter_path = [os.path.join(self.path, 'Celeb-real', 'crop_jpg'),
                             os.path.join(self.path, 'Celeb-synthesis', 'crop_jpg'),
                             os.path.join(self.path, 'YouTube-real', 'crop_jpg')]
@@ -273,8 +223,8 @@ class CelebVideoDataset(BaseVideoDataset):
 
 
 class DFDCVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/volume3/sohyun/dfdc_preprocessed', mode='train', transforms=None):
-        super().__init__('dfdc', path, mode, transforms)
+    def __init__(self, path='/workspace/dataset1/dfdc_preprocessed', mode='train', transforms=None, **kwargs):
+        super().__init__('dfdc', path, mode, transforms, **kwargs)
         self.mtype = [f'dfdc_{i:02}' for i in range(50)]
         self.iter_path = [os.path.join(self.path, set) for set in self.mtype]
         self._load_data()
@@ -292,8 +242,8 @@ class DFDCVideoDataset(BaseVideoDataset):
 
 
 class VFHQVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/ssd1/users/sumin/datasets/vfhq', mode='train', transforms=None):
-        super().__init__('vfhq', path, mode, transforms)
+    def __init__(self, path='/workspace/dataset2/vfhq', mode='train', transforms=None, **kwargs):
+        super().__init__('vfhq', path, mode, transforms, **kwargs)
         self.iter_path = [os.path.join(self.path, 'crop_jpg')]
         self._load_data()
         
@@ -307,6 +257,11 @@ class VFHQVideoDataset(BaseVideoDataset):
         self.videos += video_dirs
         self.labels += self._get_labels(video_key_path, video_keys)
 
+        if self.mode == 'train':
+            self._oversample()
+        else:
+            self._get_clips()
+            
     def _get_labels(self, video_dir, video_keys):
         return [1 if key.split('_')[2][0] == 'f' else 0 for key in video_keys]
     
@@ -317,13 +272,3 @@ if __name__ == "__main__":
     
     print(len(dataset))
     frame = dataset[0]['frame']
-    # save_image(frame, 'result.jpg')
-    
-    # num_frames = len(dataset)
-    # frame_idx = np.random.choice(num_frames, size=100, replace=False)
-    # for idx in frame_idx:
-    #     data = dataset[idx]
-    #     frame = data['frame']
-    #     save_image(frame, f'/root/result/random_result/{idx}.png')
-   
-    

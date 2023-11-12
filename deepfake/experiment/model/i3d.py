@@ -10,6 +10,24 @@ import sys
 from collections import OrderedDict
 
 
+class Normalize(nn.Module):
+    def __init__(self):
+        super(Normalize, self).__init__()
+        
+    def forward(self, x):
+        x = F.normalize(x, dim=1)
+        return x
+    
+class NormalizeUnit3D(nn.Module):
+    def __init__(self, num_classes=2):
+        super(NormalizeUnit3D, self).__init__()
+        self.fc = Unit3D()
+        
+    def forward(self, x):
+        x = F.normalize(x, dim=1)
+        x = self.fc(x)
+        return x
+
 class MaxPool3dSamePadding(nn.MaxPool3d):
     
     def compute_pad(self, dim, s):
@@ -328,6 +346,10 @@ class InceptionI3d(nn.Module):
         if self._spatial_squeeze:
             logits = x.squeeze(3).squeeze(3)
         # logits is batch X time X classes, which is what we want to work with
+
+        per_frame_logits = F.interpolate(logits, 32, mode='linear')
+        logits = torch.max(per_frame_logits, dim=2)[0]
+
         return logits
         
 
@@ -335,18 +357,72 @@ class InceptionI3d(nn.Module):
         for end_point in self.VALID_ENDPOINTS:
             if end_point in self.end_points:
                 x = self._modules[end_point](x)
-        return self.avg_pool(x)
+        x = self.avg_pool(x)
+        return x
+
+class InceptionI3dEncoder(InceptionI3d):
+    def __init__(self, in_channels):
+        super().__init__(in_channels=in_channels)
+    
+    def forward(self, x):
+        x = super().extract_features(x)
+        x = F.normalize(x)
+        return x
+    
+class InceptionI3dSupCon(InceptionI3dEncoder):
+    def __init__(self, in_channels):
+        super().__init__(in_channels=in_channels)
+    
+    def forward(self, x):
+        x = super().extract_features(x)
+        x = F.normalize(x)
+        x = self.logits(self.dropout(x))
+        if self._spatial_squeeze:
+            logits = x.squeeze(3).squeeze(3)
+        # logits is batch X time X classes, which is what we want to work with
+
+        per_frame_logits = F.interpolate(logits, 64, mode='linear')
+        logits = torch.max(per_frame_logits, dim=2)[0]
+
+        return logits
 
 
 def I3D(opt):
     """
     Construct I3D.
     """
+    print("\n=> Building model...")
 
-    model = InceptionI3d(opt.num_classes, in_channels=3)
+    model = InceptionI3d(num_classes=opt.num_classes, in_channels=3)
 
     if opt.pretrained:
-        model.load_state_dict('pretrained/rgb_imagenet.pt')
-        model.replace_logits(opt.num_classes)
+        path = opt.get('weights', 'experiment/model/pretrained/rgb_imagenet.pt')
+        freeze = opt.get('freeze', False)
+        encoder_only = opt.get('encoder_only', False)
+
+        print(f'Loading pretrained weights from {path}')
+        weights = torch.load(path)
+
+        if encoder_only:
+            print("--- Removing the last layer, training encoder\n")
+            model = InceptionI3dEncoder(in_channels=3)   
+            model.load_state_dict(weights, strict=False)
+            return model
+        
+        if freeze:
+            model = InceptionI3dSupCon(in_channels=3)
+            model.load_state_dict(weights, strict=False)
+            
+            print("--- Freezing encoder ...\n")
+            # freeze encoder
+            for para in model.parameters():
+                para.requires_grad = False
+
+            model.replace_logits(num_classes=opt.num_classes)
+
+        else:
+            model = InceptionI3d(in_channels=3)
+            model.load_state_dict(weights, strict=False)
+            model.replace_logits(num_classes=opt.num_classes)
 
     return model
