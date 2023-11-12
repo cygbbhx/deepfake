@@ -123,8 +123,12 @@ class BaseVideoDataset(Dataset):
             sampled_keys = self.clips[index]
 
         frames = []
+
+        # Fix the randomness across the video for all frames
+        state = torch.get_rng_state()   
         for frame_key in sampled_keys:
             frame = Image.open(os.path.join(video_dir, frame_key))
+            torch.set_rng_state(state)
             frame = self.transforms(frame)
             frames.append(frame)
 
