@@ -17,6 +17,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 import numpy as np
+import random
 
 # fix random seeds for reproducibility
 ramdom_seed = 1234
