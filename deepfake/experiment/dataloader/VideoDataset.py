@@ -8,10 +8,11 @@ import json
 import numpy as np
 
 class BaseVideoDataset(Dataset):
-    def __init__(self, name, path, mode='train', transforms=None, **kwargs):
+    def __init__(self, name, path, mode='train', transforms=None, augSelf=False, **kwargs):
         self.name = name
         self.path = path
         self.mode = mode
+        self.augSelf = augSelf
 
         self.num_samples = kwargs['num_samples']
         self.interval = kwargs['interval']
@@ -52,7 +53,7 @@ class BaseVideoDataset(Dataset):
 
         if self.mode == 'train':
             self._oversample()
-        else:
+        elif not self.augSelf or self.mode == 'test':
             self._get_clips()
 
     def _oversample(self):
@@ -82,7 +83,7 @@ class BaseVideoDataset(Dataset):
             frame_count = len(frame_keys)
             num_samples = self.num_samples
             interval = self.interval # UNIFORM :1,2 / SPREAD: max(total_frames // num_samples, 1)
-            max_length = (num_samples - 1) * self.interval + num_samples
+            max_length = (num_samples - 1) * self.interval + self.num_samples
 
             for starting_point in range(0, frame_count, (num_samples-1)*interval + num_samples):
                 if (interval == 0) or (frame_count <= max_length):
@@ -98,29 +99,30 @@ class BaseVideoDataset(Dataset):
                 self.clip_src_idx.append(i)
 
     def __len__(self):
-        if self.mode == 'train':
-            return len(self.videos)
-        else:
+        if self.mode == 'test':
             return len(self.clips)
+        else:
+            return len(self.videos)
     
     def __getitem__(self, index):
-        if self.mode == 'train':
+        if self.mode == 'test':
+            src_idx = self.clip_src_idx[index]
+            video_dir = self.videos[src_idx]
+            sampled_keys = self.clips[index]
+        else:
             video_dir = self.videos[index]
             frame_keys = sorted(os.listdir(video_dir))
             frame_count = len(frame_keys)
             clip_length = (self.num_samples - 1) * self.interval + self.num_samples
 
             if (self.interval == 0) or (frame_count <= clip_length):
-                starting_point = random.randint(0, frame_count - num_samples)
+                starting_point = random.randint(0, frame_count - self.num_samples)
                 sampled_keys = frame_keys[starting_point:starting_point+self.num_samples]
             else:
                 starting_point = random.randint(0, frame_count - clip_length)
                 sampled_indices = np.arange(starting_point, frame_count, self.interval)[:self.num_samples]
                 sampled_keys = [frame_keys[idx] for idx in sampled_indices]
-        else:
-            src_idx = self.clip_src_idx[index]
-            video_dir = self.videos[src_idx]
-            sampled_keys = self.clips[index]
+
 
         frames = []
 
@@ -133,18 +135,20 @@ class BaseVideoDataset(Dataset):
             frames.append(frame)
 
         # If contrastive learning, we get 2 tensors of frame
-        if isinstance(frame, list):
+        if self.augSelf:
             frames_tensor1 = torch.stack([frame1 for frame1, frame2 in frames], dim=0).transpose(0,1)
             frames_tensor2 = torch.stack([frame2 for frame1, frame2 in frames], dim=0).transpose(0,1)
 
             frame_data = [frames_tensor1, frames_tensor2]
+            data = {'frame': frame_data, 'label': self.labels[index]}
+
         else:
             frame_data = torch.stack(frames, dim=0).transpose(0,1)
 
-        if self.mode == 'train':
-            data = {'frame': frame_data, 'label': self.labels[index]}
-        else:
-            data = {'video': src_idx, 'frame': frame_data, 'label': self.labels[src_idx]}
+            if self.mode == 'test':
+                data = {'video': src_idx, 'frame': frame_data, 'label': self.labels[src_idx]}
+            else:
+                data = {'frame': frame_data, 'label': self.labels[index]}
 
         return data
 
