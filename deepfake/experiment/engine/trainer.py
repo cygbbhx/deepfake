@@ -44,6 +44,8 @@ class Trainer():
         else:
             print('no ckpt to load!')
         print('start training')
+        self.logger.info(f'CONFIG: \n{self.opt}')
+
         total_steps = 0
         train_loss_list = []
         val_loss_list = []
@@ -88,33 +90,8 @@ class Trainer():
         with torch.no_grad():
             pred = []
             true = []
-
-            videoNum = len(self.val_loader.dataset.videos)
-            clipsNum = len(self.val_loader.dataset.clips)
-
-            total = videoNum
-            
-            tmp_pred, tmp_true = [], []
-            count = 0
-            cur_video = 0
-
             for data in self.val_loader:
-                if (self.loss_name == 'SupCon'):
-                    x1, x2 = data['frame']
-                    data['frame'] = torch.cat([x1, x2], dim=0)
-                    output = self.model(data['frame'].to(self.device))
-                    bsz = data['frame'].shape[0] // 2
-                    f1, f2 = torch.split(output, [bsz, bsz], dim=0)
-                    output = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-                elif self.loss_name == 'triplet':
-                    anchor, pos, neg = data['frames']
-                    anchor_features = self.model(anchor.to(self.device))
-                    pos_features = self.model(pos.to(self.device))
-                    neg_features = self.model(neg.to(self.device))
-                    output = [anchor_features, pos_features, neg_features]  
-                else:
-                    output = self.model(data['frame'].to(self.device))
-                    
+                output = self.get_output(data)
 
                 if (self.contrastive_learning):
                     val_loss += self.loss_function(output, data['label'].to(self.device)).item()
@@ -122,34 +99,13 @@ class Trainer():
                     output = post_function(output)
                     _, predicted = torch.max(output.data, 1)
 
-                    pred_results = output.data.cpu().tolist()
+                    pred += output.data[:, 1].cpu().tolist()
+                    true += data['label'].cpu()
 
-                    for i, batch_inst in enumerate(data['video']):
-                        if batch_inst != cur_video:
-                            cur_video = batch_inst
-                            ensembled_outputs = torch.stack(tmp_pred).mean(dim=0)
-                            _, prediction = torch.max(ensembled_outputs, 0)
-
-                            pred.append(ensembled_outputs[1])
-                            correct += int(prediction == tmp_true)
-                            true.append(tmp_true)
-                            val_loss += self.loss_function(ensembled_outputs.to(self.device), tmp_true.to(self.device)).item()
-
-                            tmp_pred, tmp_true = [], []
-                        tmp_pred += [torch.tensor(pred_results[i])]
-                        tmp_true = data['label'].cpu()[i]
-
-                    count += 1
-
-            # Evaluate last video 
-            if len(tmp_pred) != 0:
-                ensembled_outputs = torch.stack(tmp_pred).mean(dim=0)
-                _, prediction = torch.max(ensembled_outputs, 0)
-
-                pred.append(ensembled_outputs[1])
-                correct += int(prediction == tmp_true)
-                true.append(tmp_true)
-                val_loss += self.loss_function(ensembled_outputs.to(self.device), tmp_true.to(self.device)).item()
+                    total += data['label'].to(self.device).size(0)
+                    correct += (predicted == data['label'].to(self.device)).sum().item()
+                    loss = self.loss_function(output, data['label'].to(self.device)).item()
+                    val_loss += loss
 
             if self.contrastive_learning:
                 # Return dummy values for unused metrics
@@ -163,28 +119,32 @@ class Trainer():
         if self.optimizer is not None:
             self.optimizer.zero_grad()
 
-        if self.loss_name == 'SupCon':
-            x1, x2 = data['frame']
-            data['frame'] = torch.cat([x1, x2], dim=0)       
-            output = self.model(data['frame'].to(self.device))        
-            bsz = data['frame'].shape[0] // 2
-            f1, f2 = torch.split(output, [bsz, bsz], dim=0)
-            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-            output = features
-        elif self.loss_name == 'triplet':
-            anchor, pos, neg = data['frames']
-            anchor_features = self.model(anchor.to(self.device))
-            pos_features = self.model(pos.to(self.device))
-            neg_features = self.model(neg.to(self.device))
-            output = [anchor_features, pos_features, neg_features]       
-        else:
-            output = self.model(data['frame'].to(self.device))
-
+        output = self.get_output(data)
         train_loss = self.loss_function(output, data['label'].to(self.device))
         train_loss.backward()
         if self.optimizer is not None:
             self.optimizer.step()
         return train_loss
+
+    def get_output(self, data):
+        if (self.loss_name == 'SupCon'):
+            x1, x2 = data['frame']
+            data['frame'] = torch.cat([x1, x2], dim=0)
+            output = self.model(data['frame'].to(self.device))
+            bsz = data['frame'].shape[0] // 2
+            f1, f2 = torch.split(output, [bsz, bsz], dim=0)
+            output = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        elif self.loss_name == 'triplet':
+            anchor, pos, neg = data['frames']
+            anchor_features = self.model(anchor.to(self.device))
+            pos_features = self.model(pos.to(self.device))
+            neg_features = self.model(neg.to(self.device))
+            output = [anchor_features, pos_features, neg_features]  
+        else:
+            output = self.model(data['frame'].to(self.device))
+
+        return output
+
 
     def load_model(self):
         self.model.load_state_dict(torch.load(self.load_ckpt_dir))
