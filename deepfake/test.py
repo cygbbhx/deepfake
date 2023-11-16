@@ -13,6 +13,11 @@ import logging
 import torch
 from collections import OrderedDict
 
+SEED = 123
+torch.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(SEED)
 
 parser = ArgumentParser('Deepface Training Script')
 parser.add_argument('config', type=str, help='config file path')
@@ -77,10 +82,10 @@ if __name__ == '__main__':
     # test
     test_data_list = ['ff', 'celeb', 'dfdc', 'vfhq', 'dff']
     print(f"Using {opt.DATA.type} dataset ...") 
+    logger.debug(f'=> Tested with model weight {args.weights}')
 
     for dataset in test_data_list:
         opt.DATA.test_data_name = dataset
-        opt.DATA.batch_size = 1
         logger.debug(f'----- Test dataset: {dataset}')
     
         # Load Dataloader
