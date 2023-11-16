@@ -16,7 +16,16 @@ from experiment.model.i3d import I3D
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
-# from torchsummary import summary
+import numpy as np
+
+# fix random seeds for reproducibility
+ramdom_seed = 1234
+deterministic = True
+
+random.seed(ramdom_seed)
+np.random.seed(ramdom_seed)
+torch.manual_seed(ramdom_seed)
+torch.cuda.manual_seed_all(ramdom_seed)
 
 def init_distributed_training(rank, opt):
     opt.rank = rank
