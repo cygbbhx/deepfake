@@ -70,16 +70,16 @@ def get_video_dataset(opt):
     train_data_class = dataset_mapping[train_data_name]
     test_data_class = dataset_mapping[test_data_name]
 
-    interval = 2
-    num_samples = 32
+    interval = 0
+    num_samples = opt.frames
     
-    train_dataset = train_data_class(interval=interval, num_samples=num_samples, mode='train', transforms=augmentation)
+    train_dataset = train_data_class(interval=interval, num_samples=num_samples, augSelf=opt.augSelf, mode='train', transforms=augmentation)
     train_dataloader = DataLoader(train_dataset, 
                                 batch_size=opt.batch_size, 
                                 shuffle=True, 
                                 num_workers=opt.num_workers)
 
-    val_dataset = train_data_class(interval=interval, num_samples=num_samples, mode='val', transforms=augmentation)
+    val_dataset = train_data_class(interval=interval, num_samples=num_samples, augSelf=opt.augSelf, mode='val', transforms=augmentation)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=opt.batch_size,
                                 shuffle=False,

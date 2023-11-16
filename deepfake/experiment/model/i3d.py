@@ -204,7 +204,7 @@ class InceptionI3d(nn.Module):
         'Predictions',
     )
 
-    def __init__(self, num_classes=400, spatial_squeeze=True,
+    def __init__(self, num_classes=400, spatial_squeeze=True, num_frames=32,
                  final_endpoint='Logits', name='inception_i3d', in_channels=3, dropout_keep_prob=0.5):
         """Initializes I3D model instance.
         Args:
@@ -231,6 +231,7 @@ class InceptionI3d(nn.Module):
         self._spatial_squeeze = spatial_squeeze
         self._final_endpoint = final_endpoint
         self.logits = None
+        self.num_frames = num_frames
 
         if self._final_endpoint not in self.VALID_ENDPOINTS:
             raise ValueError('Unknown final endpoint %s' % self._final_endpoint)
@@ -347,7 +348,7 @@ class InceptionI3d(nn.Module):
             logits = x.squeeze(3).squeeze(3)
         # logits is batch X time X classes, which is what we want to work with
 
-        per_frame_logits = F.interpolate(logits, 32, mode='linear')
+        per_frame_logits = F.interpolate(logits, self.num_frames, mode='linear')
         logits = torch.max(per_frame_logits, dim=2)[0]
 
         return logits
@@ -370,8 +371,9 @@ class InceptionI3dEncoder(InceptionI3d):
         return x
     
 class InceptionI3dSupCon(InceptionI3dEncoder):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, num_frames):
         super().__init__(in_channels=in_channels)
+        self.num_frames = num_frames
     
     def forward(self, x):
         x = super().extract_features(x)
@@ -381,7 +383,7 @@ class InceptionI3dSupCon(InceptionI3dEncoder):
             logits = x.squeeze(3).squeeze(3)
         # logits is batch X time X classes, which is what we want to work with
 
-        per_frame_logits = F.interpolate(logits, 64, mode='linear')
+        per_frame_logits = F.interpolate(logits, self.num_frames, mode='linear')
         logits = torch.max(per_frame_logits, dim=2)[0]
 
         return logits
@@ -394,6 +396,7 @@ def I3D(opt):
     print("\n=> Building model...")
 
     model = InceptionI3d(num_classes=opt.num_classes, in_channels=3)
+    num_frames = opt.frames
 
     if opt.pretrained:
         path = opt.get('weights', 'experiment/model/pretrained/rgb_imagenet.pt')
@@ -410,7 +413,7 @@ def I3D(opt):
             return model
         
         if freeze:
-            model = InceptionI3dSupCon(in_channels=3)
+            model = InceptionI3dSupCon(in_channels=3, num_frames=num_frames)
             model.load_state_dict(weights, strict=False)
             
             print("--- Freezing encoder ...\n")
@@ -421,7 +424,7 @@ def I3D(opt):
             model.replace_logits(num_classes=opt.num_classes)
 
         else:
-            model = InceptionI3d(in_channels=3)
+            model = InceptionI3d(in_channels=3, num_frames=num_frames)
             model.load_state_dict(weights, strict=False)
             model.replace_logits(num_classes=opt.num_classes)
 
