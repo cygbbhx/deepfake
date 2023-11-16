@@ -53,7 +53,7 @@ class BaseVideoDataset(Dataset):
 
         if self.mode == 'train':
             self._oversample()
-        elif not self.augSelf or self.mode == 'test':
+        elif self.mode == 'test':
             self._get_clips()
 
     def _oversample(self):
