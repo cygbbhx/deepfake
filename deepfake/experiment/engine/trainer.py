@@ -45,7 +45,6 @@ class Trainer():
         if self.load_ckpt_dir != 'None':
             self.load_model()
             print('load model from ', self.load_ckpt_dir)
-            return
         else:
             print('no ckpt to load!')
         print('start training')
