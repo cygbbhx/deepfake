@@ -8,7 +8,8 @@ def get_loss_function(name='crossentropy'):
     loss_dict = {'crossentropy': nn.CrossEntropyLoss(),
                  'SimCLR': SimCLR_Loss(),
                  'SupCon': SupConLoss(),
-                 'triplet': TripletLoss()}
+                 'triplet': TripletLoss(),
+                 'SupConHnm': SupConHnm()}
     
     is_contrastive_learning = name != 'crossentropy'
     
@@ -71,7 +72,7 @@ class TripletLoss(nn.Module):
 
        # Find the hardest negative sample for each anchor
         hardest_pos_distance = pos_distance.max(dim=0)[0]    
-        hardest_neg_distance = neg_distance.max(dim=0)[0]
+        hardest_neg_distance = neg_distance.min(dim=0)[0]
 
         # Compute the triplet loss
         loss = max(hardest_pos_distance - hardest_neg_distance + self.margin, 0)
@@ -172,4 +173,21 @@ class SupConLoss(nn.Module):
         loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
         loss = loss.view(anchor_count, batch_size).mean()
 
+        return loss
+
+class SupConHnm(nn.Module):
+    def __init__(self, margin=2.0):
+        super(SupConHnm, self).__init__()
+        self.SupCon = SupConLoss()
+        self.TripletLoss = nn.TripletMarginLoss()
+
+    def forward(self, features, labels):
+        anchors, pos, neg = features
+        a1, a2 = anchors
+        triplet = self.TripletLoss(a1, pos, neg)
+
+        anchors = torch.cat([a1.unsqueeze(1), a2.unsqueeze(1)], dim=1)
+        supcon = self.SupCon(anchors, labels)
+
+        loss = supcon + triplet * 0.2
         return loss
