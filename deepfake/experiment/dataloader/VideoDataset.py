@@ -85,7 +85,7 @@ class BaseVideoDataset(Dataset):
             interval = self.interval # UNIFORM :1,2 / SPREAD: max(total_frames // num_samples, 1)
             max_length = (num_samples - 1) * self.interval + self.num_samples
 
-            for starting_point in range(0, frame_count, (num_samples-1)*interval + num_samples):
+            for starting_point in range(0, frame_count, max_length):
                 if (interval == 0) or (frame_count <= max_length):
                     sampled_keys = frame_keys[starting_point:starting_point+num_samples]
                 else:
@@ -185,7 +185,7 @@ class FFVideoDataset(BaseVideoDataset):
         return [0 if video_dir.find('original') >= 0 else 1 for _ in range(len(video_keys))]
 
 class DFFVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/dataset1/dff_preprocessed', mode='train', transforms=None, **kwargs):
+    def __init__(self, path='/workspace/dff', mode='train', transforms=None, **kwargs):
         super().__init__('dff', path, mode, transforms, **kwargs)
         folders = os.listdir(os.path.join(self.path, 'manipulated_videos'))
 
