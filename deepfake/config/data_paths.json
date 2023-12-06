@@ -1,0 +1,7 @@
+{
+    "ff" : "/workspace/dataset2/ff",
+    "celeb": "/workspace/dataset2/celeb",
+    "dfdc": "/workspace/dataset1/dfdc_preprocessed",
+    "vfhq": "/workspace/dataset2/vfhq",
+    "dff": "/workspace/dff"
+}

@@ -10,7 +10,11 @@ import numpy as np
 class BaseVideoDataset(Dataset):
     def __init__(self, name, path, mode='train', transforms=None, augSelf=False, **kwargs):
         self.name = name
-        self.path = path
+
+        with open('config/data_paths.json') as f:
+            paths = json.load(f)
+
+        self.path = paths[name]
         self.mode = mode
         self.augSelf = augSelf
 
@@ -169,8 +173,8 @@ class BaseVideoDataset(Dataset):
 
 
 class FFVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/dataset2/ff', mode='train', transforms=None, **kwargs):
-        super().__init__('ff', path, mode, transforms, **kwargs)
+    def __init__(self,  mode='train', transforms=None, **kwargs):
+        super().__init__('ff', mode, transforms, **kwargs)
 
         self.iter_path = [os.path.join(self.path, 'original_sequences', 'raw', 'crop_jpg'), 
                             os.path.join(self.path, 'manipulated_sequences', 'Deepfakes', 'raw', 'crop_jpg'),
@@ -185,8 +189,8 @@ class FFVideoDataset(BaseVideoDataset):
         return [0 if video_dir.find('original') >= 0 else 1 for _ in range(len(video_keys))]
 
 class DFFVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/dff', mode='train', transforms=None, **kwargs):
-        super().__init__('dff', path, mode, transforms, **kwargs)
+    def __init__(self, mode='train', transforms=None, **kwargs):
+        super().__init__('dff', mode, transforms, **kwargs)
         folders = os.listdir(os.path.join(self.path, 'manipulated_videos'))
 
         self.iter_path = [os.path.join(self.path, 'manipulated_videos', folder) for folder in folders]
@@ -201,8 +205,8 @@ class DFFVideoDataset(BaseVideoDataset):
 
 
 class CelebVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/dataset2/celeb', mode='train', transforms=None, **kwargs):
-        super().__init__('celeb', path, mode, transforms, **kwargs)
+    def __init__(self, mode='train', transforms=None, **kwargs):
+        super().__init__('celeb', mode, transforms, **kwargs)
         self.iter_path = [os.path.join(self.path, 'Celeb-real', 'crop_jpg'),
                             os.path.join(self.path, 'Celeb-synthesis', 'crop_jpg'),
                             os.path.join(self.path, 'YouTube-real', 'crop_jpg')]
@@ -231,8 +235,8 @@ class CelebVideoDataset(BaseVideoDataset):
 
 
 class DFDCVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/dataset1/dfdc_preprocessed', mode='train', transforms=None, **kwargs):
-        super().__init__('dfdc', path, mode, transforms, **kwargs)
+    def __init__(self, mode='train', transforms=None, **kwargs):
+        super().__init__('dfdc', mode, transforms, **kwargs)
         self.mtype = [f'dfdc_{i:02}' for i in range(50)]
         self.iter_path = [os.path.join(self.path, set) for set in self.mtype]
         self._load_data()
@@ -250,8 +254,8 @@ class DFDCVideoDataset(BaseVideoDataset):
 
 
 class VFHQVideoDataset(BaseVideoDataset):
-    def __init__(self, path='/workspace/dataset2/vfhq', mode='train', transforms=None, **kwargs):
-        super().__init__('vfhq', path, mode, transforms, **kwargs)
+    def __init__(self, mode='train', transforms=None, **kwargs):
+        super().__init__('vfhq', mode, transforms, **kwargs)
         self.iter_path = [os.path.join(self.path, 'crop_jpg')]
         self._load_data()
         
