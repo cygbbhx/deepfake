@@ -35,7 +35,7 @@ python test.py path_to_your_checkpoint_experiment_directory
 ### Extracting Features
 
 ```bash
-python feature_extraction.py -w path_to_model_weights
+python visualize/feature_extraction.py -c path_to_model_config -w path_to_model_weights
 ```
 
 ### Visualizing Features
