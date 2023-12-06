@@ -30,13 +30,15 @@ def get_activation(name):
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    opt = OmegaConf.load(args.config)
+    exp_name = opt.EXP_NAME 
 
-    os.makedirs('visualize/features', exist_ok=True)
+    os.makedirs(f'visualize/{exp_name}', exist_ok=True)
     device = 'cuda:0'
 
     # Model
-    # model = XceptionNet(opt.MODEL)
-    model = DANN_I3D()
+    model = XceptionNet(opt.MODEL)
+    # model = DANN_I3D()
     # model = I3D(opt.MODEL)
     model.to(device)
     checkpoint = torch.load(args.weight) 
@@ -50,21 +52,22 @@ if __name__ == '__main__':
                 T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
                 ])
 
-    # dataset_mapping = {
-    #         'ff': FFImageDataset,
-    #         'celeb': CelebImageDataset,
-    #         'dfdc': DFDCImageDataset,
-    #         'vfhq': VFHQImageDataset,
-    #         'dff' : DFFImageDataset
-    #     }
-
-    dataset_mapping = {
-            'ff': FFVideoDataset,
-            'celeb': CelebVideoDataset,
-            'dfdc': DFDCVideoDataset,
-            'vfhq': VFHQVideoDataset,
-            'dff' : DFFVideoDataset
-        }
+    if opt.DATA.type == "image":
+        dataset_mapping = {
+                'ff': FFImageDataset,
+                'celeb': CelebImageDataset,
+                'dfdc': DFDCImageDataset,
+                'vfhq': VFHQImageDataset,
+                'dff' : DFFImageDataset
+            }
+    else:
+        dataset_mapping = {
+                'ff': FFVideoDataset,
+                'celeb': CelebVideoDataset,
+                'dfdc': DFDCVideoDataset,
+                'vfhq': VFHQVideoDataset,
+                'dff' : DFFVideoDataset
+            }
 
     dataset_list = ['ff', 'celeb', 'dfdc', 'vfhq', 'dff']
     sample_num = 250    
@@ -74,10 +77,16 @@ if __name__ == '__main__':
     for target_ds in dataset_list:
         print(f"extracting features from {target_ds}")
         data_type = dataset_mapping[target_ds]
-        dataset = data_type(mode='test', transforms=augmentation, num_samples=32, interval=0)
+        if opt.DATA.type == "image":
+            dataset = data_type(mode='test', transforms=augmentation)
+        else:
+            dataset = data_type(mode='test', transforms=augmentation, num_samples=32, interval=0)
 
-        if len(dataset) < sample_num:
-            dataset = data_type(mode='train', transforms=augmentation, num_samples=32, interval=0)
+        if len(dataset) < sample_num:    
+            if opt.DATA.type == "image":
+                dataset = data_type(mode='train', transforms=augmentation)
+            else:
+                dataset = data_type(mode='train', transforms=augmentation, num_samples=32, interval=0)
 
         dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
 
@@ -92,7 +101,9 @@ if __name__ == '__main__':
                 labels = data['label'].to(device)
 
                 # Forward pass
-                outputs, _ = model(frames, 0)
+                outputs = model(frames)
+                # For DANN
+                # outputs, _ = model(frames, 0)
                 outputs = softmax(outputs)
                 _, predicted = torch.max(outputs.data, 1)
                 
@@ -123,5 +134,5 @@ if __name__ == '__main__':
 
         feature_labels = np.concatenate(feature_labels).ravel()
                     
-        np.save(f'visualize/features/{target_ds}_features', features)
-        np.save(f'visualize/features/{target_ds}_labels', feature_labels)    
+        np.save(f'visualize/{exp_name}/{target_ds}_features', features)
+        np.save(f'visualize/{exp_name}/{target_ds}_labels', feature_labels)    
