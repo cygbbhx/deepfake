@@ -11,7 +11,7 @@ preprocessing/png/
 preprocessing/bboxes/
 deepfake/visualize/features/
 deepfake/visualize/results/
-deepfake/config/*
+deepfake/config/
 __pycache__/
 *.pyc
 *.pt
