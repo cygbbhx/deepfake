@@ -8,24 +8,31 @@ from experiment.dataloader.VideoDataLoader import get_video_dataset
 from experiment.model.xception import XceptionNet
 from experiment.model.i3d import I3D
 from experiment.engine.tester import Tester
-#from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
+from pytz import timezone
 import logging
 import torch
 from collections import OrderedDict
+import numpy as np
+import random
+import torch.backends.cudnn as cudnn
 
-SEED = 123
-torch.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-np.random.seed(SEED)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.cuda.manual_seed_all(0)
+np.random.seed(0)
+cudnn.benchmark = False
+cudnn.deterministic = True
+random.seed(0)
 
 parser = ArgumentParser('Deepface Training Script')
-parser.add_argument('config', type=str, help='config file path')
-parser.add_argument('weights', type=str, default=None, help='test model weights')
+parser.add_argument('config', type=str, help='config directory path')
+parser.add_argument('-w', '--weights', type=str, default=None, help='test model weights')
+parser.add_argument('-b', '--batch_size', type=int, default=None, help='test data batch size')
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    opt = OmegaConf.load(args.config)
+    opt = OmegaConf.load(os.path.join(args.config, "config.yaml"))
     opt.DATA.augSelf = opt.DATA.get('augSelf', False)
     opt.DATA.type = opt.DATA.get('type', 'image')
     #writer = SummaryWriter()
@@ -38,12 +45,12 @@ if __name__ == '__main__':
     }
 
     model = model_list[opt.MODEL.name](opt.MODEL)
-    
     weights = opt.get('WEIGHTS', args.weights)
     
-    if (weights == None):
-        print('model weights not provided!')
-        exit
+    if weights == None:
+        print('model weights not assigned, using the best weight')
+        args.weights = 'best.pt'
+        weights = os.path.join(opt.TRAIN.ckpt_dir, 'best.pt')
 
     checkpoint = torch.load(weights, map_location='cuda:0') 
 
@@ -65,24 +72,24 @@ if __name__ == '__main__':
 
     # 로그의 출력 기준 설정
     logger.setLevel(logging.DEBUG)
-
-    # log 출력 형식
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_logging_format = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    console_logging_format.converter = lambda *args: datetime.now(tz=timezone('Asia/Seoul')).timetuple()
 
     # log 출력
     stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
+    stream_handler.setFormatter(console_logging_format)
     logger.addHandler(stream_handler)
 
     # log를 파일에 출력
-    file_handler = logging.FileHandler(opt.LOG_FILENAME)
-    file_handler.setFormatter(formatter)
+    file_handler = logging.FileHandler(os.path.join(opt.TRAIN.ckpt_dir, 'test_log'))
+    file_handler.setFormatter(console_logging_format)
     logger.addHandler(file_handler)
 
     # test
     test_data_list = ['ff', 'celeb', 'dfdc', 'vfhq', 'dff']
-    print(f"Using {opt.DATA.type} dataset ...") 
     logger.debug(f'=> Tested with model weight {args.weights}')
+    if args.batch_size != None:
+        opt.DATA.batch_size = args.batch_size
 
     for dataset in test_data_list:
         opt.DATA.test_data_name = dataset
@@ -93,6 +100,10 @@ if __name__ == '__main__':
 
         # dataloader = get_video_dataset(opt.DATA)
         tester = Tester(opt, dataloader, model, logger)
-        tester.test_each("test")
+
+        if opt.DATA.type == 'image':
+            tester.test("test")
+        else:
+            tester.test_each("test")
         logger.debug('------------------------------')
     
