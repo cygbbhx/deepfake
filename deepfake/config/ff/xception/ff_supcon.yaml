@@ -1,0 +1,30 @@
+EXP_NAME: ff_supcon
+
+DATA:
+  train_data_name: ff
+  image_size: 229
+  batch_size: 64
+  num_workers: 4
+  augSelf: True
+
+MODEL:
+  name: Xception
+  pretrained: True
+  num_classes: 2
+  encoder_only: True
+
+TRAIN:
+  epochs: 50
+  lr: 0.0001
+  momentum: 0.9
+  weight_decay: 0.0001
+  lr_step_size: 7
+  lr_gamma: 0.1
+  log_interval: 20
+  save_interval: 100
+  ckpt_dir: 'checkpoints/ff_supcon/'
+  load_ckpt_dir: None
+  loss: SupCon
+
+LOG_FILENAME: '.log/ff_supcon'
+RETRAIN: false
