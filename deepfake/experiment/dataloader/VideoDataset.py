@@ -8,7 +8,7 @@ import json
 import numpy as np
 
 class BaseVideoDataset(Dataset):
-    def __init__(self, name, path, mode='train', transforms=None, augSelf=False, **kwargs):
+    def __init__(self, name, mode='train', transforms=None, augSelf=False, **kwargs):
         self.name = name
 
         with open('config/data_paths.json') as f:
