@@ -231,6 +231,41 @@ class Xception(nn.Module):
 
         return x
 
+    def extract_features(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.block5(x)
+        x = self.block6(x)
+        x = self.block7(x)
+        x = self.block8(x)
+        x = self.block9(x)
+        x = self.block10(x)
+        x = self.block11(x)
+        x = self.block12(x)
+        
+        x = self.conv3(x)
+        x = self.bn3(x)
+        x = self.relu(x)
+        
+        x = self.conv4(x)
+        x = self.bn4(x)
+        x = self.relu(x)
+
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = x.view(x.size(0), -1)
+
+        return x
+
 def XceptionNet(opt):
     """
     Construct Xception.

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+from .functions import ReverseLayerF
 import numpy as np
 
 import os
@@ -389,14 +390,55 @@ class InceptionI3dSupCon(InceptionI3dEncoder):
         return logits
 
 
+class DANN_I3D(InceptionI3d):
+    def __init__(self):
+        super(DANN_I3D, self).__init__()
+        self.class_logits = Unit3D(in_channels=384+384+128+128, output_channels=2,
+                             kernel_shape=[1, 1, 1],
+                             padding=0,
+                             activation_fn=None,
+                             use_batch_norm=False,
+                             use_bias=True,
+                             name='logits_class')
+        self.domain_logits = Unit3D(in_channels=384+384+128+128, output_channels=4,
+                             kernel_shape=[1, 1, 1],
+                             padding=0,
+                             activation_fn=None,
+                             use_batch_norm=False,
+                             use_bias=True,
+                             name='logits_domain')   
+    
+    def forward(self, x, alpha):
+        for end_point in self.VALID_ENDPOINTS:
+            if end_point in self.end_points:
+                x = self._modules[end_point](x) # use _modules to work with dataparallel
+
+        feature = self.dropout(self.avg_pool(x))
+        reverse_feature = ReverseLayerF.apply(feature, alpha)
+        
+        class_logits = self.class_logits(feature)
+        domain_logits = self.domain_logits(reverse_feature)
+        
+        if self._spatial_squeeze:
+            class_logits = class_logits.squeeze(3).squeeze(3)
+            domain_logits = domain_logits.squeeze(3).squeeze(3)
+
+        class_per_frame_logits = F.interpolate(class_logits, 32, mode='linear')
+        domain_per_frame_logits = F.interpolate(domain_logits, 32, mode='linear')
+        
+        class_output = torch.max(class_per_frame_logits, dim=2)[0]
+        domain_output = torch.max(domain_per_frame_logits, dim=2)[0]
+        return class_output, domain_output
+
+
 def I3D(opt):
     """
     Construct I3D.
     """
     print("\n=> Building model...")
 
-    model = InceptionI3d(num_classes=opt.num_classes, in_channels=3)
     num_frames = opt.frames
+    model = InceptionI3d(num_classes=opt.num_classes, num_frames=num_frames, in_channels=3)
 
     if opt.pretrained:
         path = opt.get('weights', 'experiment/model/pretrained/rgb_imagenet.pt')
@@ -413,10 +455,10 @@ def I3D(opt):
             return model
         
         if freeze:
+            print("--- Freezing encoder ...\n")
             model = InceptionI3dSupCon(in_channels=3, num_frames=num_frames)
             model.load_state_dict(weights, strict=False)
             
-            print("--- Freezing encoder ...\n")
             # freeze encoder
             for para in model.parameters():
                 para.requires_grad = False
