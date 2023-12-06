@@ -8,6 +8,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score
 from experiment.engine.loss import get_loss_function
 from experiment.engine.parallel import DataParallelCriterion
+from datetime import datetime, timedelta
+import math
+from omegaconf import OmegaConf
 
 class Trainer():
     def __init__(self, opt, data_loader, model, logger):
@@ -32,11 +35,13 @@ class Trainer():
         self.load_ckpt_dir = opt.TRAIN.load_ckpt_dir
 
         self.sampler = data_loader['sampler'] if opt.distributed else None
-
-        print(f'Using {opt.TRAIN.loss} for training...')
         
         
     def train(self):
+        os.makedirs(osp.join(self.ckpt_dir, 'weights'), exist_ok=True)
+        self.logger.info(f'CONFIG: \n{self.opt}')
+        OmegaConf.save(self.opt, os.path.join(self.ckpt_dir, "config.yaml"))
+
         if self.load_ckpt_dir != 'None':
             self.load_model()
             print('load model from ', self.load_ckpt_dir)
@@ -44,11 +49,13 @@ class Trainer():
         else:
             print('no ckpt to load!')
         print('start training')
-        self.logger.info(f'CONFIG: \n{self.opt}')
 
         total_steps = 0
         train_loss_list = []
         val_loss_list = []
+        best_val = math.inf
+        best_acc = 0
+        best_info = ''
 
         for epoch in range(self.total_epoch):
             self.model.train()
@@ -67,22 +74,36 @@ class Trainer():
                         print(f"loss: {train_loss.item()/steps:>7f}  [{steps:>5d}/{len(self.train_loader):>5d}]")
     
                 if total_steps%self.save_interval == 0:
-                    self.save_model(total_steps, epoch)
+                    self.save_model(steps, epoch)
                     
             train_loss_list.append(train_loss/len(self.train_loader))
             total, correct, val_loss, auc_score = self.validate()
             val_loss_list.append(val_loss)
+
+            if self.contrastive_learning:
+                if val_loss < best_val:
+                    torch.save(self.model.state_dict(), osp.join(self.ckpt_dir, 'best.pt'))
+                    best_info = f'epoch{epoch+1}_step{steps}'
+                    best_val = val_loss
+            else:      
+                val_acc = correct / total * 100      
+                if val_acc > best_acc:
+                    torch.save(self.model.state_dict(), osp.join(self.ckpt_dir, 'best.pt'))
+                    best_info = f'epoch{epoch+1}_step{steps}'
+                    best_acc = val_acc
+
             self.save_loss_graph(epoch+1, train_loss_list, val_loss_list)
 
-            if (self.contrastive_learning):
+            if self.contrastive_learning:
                 self.logger.info('Epoch: %d/%d, Train loss: %.6f, val loss: %.6f' 
                                  %(epoch+1, self.total_epoch, train_loss/len(self.train_loader), val_loss))
             else:
                 self.logger.info('Epoch: %d/%d, Train loss: %.6f, val loss: %.6f, Accuracy: %.2f AUC score: %.2f' 
                                 %(epoch+1, self.total_epoch, train_loss/len(self.train_loader), val_loss, 100*correct/total, auc_score))
                 
-        self.save_model(total_steps, epoch)
+        self.save_model(steps, epoch)
         self.logger.info('Finished Training : total steps %d' %total_steps)
+        self.logger.info(f'Best checkpoint at:{best_info}\n')
 
     def validate(self, post_function=nn.Softmax(dim=1)):
         total, correct, val_loss = 0, 0, 0
@@ -93,7 +114,7 @@ class Trainer():
             for data in self.val_loader:
                 output = self.get_output(data)
 
-                if (self.contrastive_learning):
+                if self.contrastive_learning:
                     val_loss += self.loss_function(output, data['label'].to(self.device)).item()
                 else:
                     output = post_function(output)
@@ -127,7 +148,7 @@ class Trainer():
         return train_loss
 
     def get_output(self, data):
-        if (self.loss_name == 'SupCon'):
+        if self.loss_name == 'SupCon':
             x1, x2 = data['frame']
             data['frame'] = torch.cat([x1, x2], dim=0)
             output = self.model(data['frame'].to(self.device))
@@ -140,6 +161,14 @@ class Trainer():
             pos_features = self.model(pos.to(self.device))
             neg_features = self.model(neg.to(self.device))
             output = [anchor_features, pos_features, neg_features]  
+        elif self.loss_name == 'SupConHnm':
+            anchors, positives, negatives = data['frames']
+            a1_features = self.model(anchors[0].to(self.device))
+            a2_features = self.model(anchors[1].to(self.device))
+
+            pos_features = self.model(positives[0].to(self.device))
+            neg_features = self.model(negatives[0].to(self.device))
+            output = [[a1_features, a2_features], pos_features, neg_features] 
         else:
             output = self.model(data['frame'].to(self.device))
 
@@ -150,11 +179,9 @@ class Trainer():
         self.model.load_state_dict(torch.load(self.load_ckpt_dir))
             
     def save_model(self, steps, epoch):
-        os.makedirs(self.ckpt_dir, exist_ok=True)
-        torch.save(self.model.state_dict(), osp.join(self.ckpt_dir, f'step{steps}_ep{epoch+1}.pt'))
+        torch.save(self.model.state_dict(), osp.join(self.ckpt_dir, 'weights', f'ep{epoch+1:03}_step{steps:04}.pt'))
 
     def save_loss_graph(self, epoch, train_loss, val_loss):   
-        os.makedirs(self.ckpt_dir, exist_ok=True)
         epochs = [i+1 for i in range(epoch)]    
         train_loss_list = torch.tensor(train_loss, device = 'cpu')
         val_loss_list = torch.tensor(val_loss, device = 'cpu')
