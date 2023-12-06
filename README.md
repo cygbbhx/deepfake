@@ -1,4 +1,4 @@
-# deepfake
+# CIPLAB Deepfake Detection Project
 
 ## Setup
 1. Clone the repository:
