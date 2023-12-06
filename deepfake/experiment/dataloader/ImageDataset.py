@@ -76,16 +76,36 @@ def get_image_dataset(opt):
     assert test_data_name in dataset_mapping, f"Unsupported dataset name: {test_data_name}"
 
     # Create the appropriate dataset class based on the name
-    train_data_class = dataset_mapping[train_data_name]
     test_data_class = dataset_mapping[test_data_name]
+
+    multiple = opt.get('multiple', False)
+
+    if multiple:    
+        datasets = opt.get('datasets', ['ff', 'celeb', 'vfhq', 'dff'])
+        train_datasets = []
+        val_datasets = []
+        # interval/ num_sample options not applied yet here
+        for dataset in datasets:
+            train_data_class = dataset_mapping[dataset]
+            train_dataset = train_data_class(mode='train', transforms=augmentation)
+            val_dataset = train_data_class(mode='val', transforms=augmentation)
+
+            train_datasets.append(train_dataset)
+            val_datasets.append(val_dataset)
+        
+        train_dataset = torch.utils.data.ConcatDataset(train_datasets)
+        val_dataset = torch.utils.data.ConcatDataset(val_datasets)
+    else:
+        train_data_class = dataset_mapping[train_data_name]
+        train_dataset = train_data_class(mode='train', transforms=augmentation)
+        val_dataset = train_data_class(mode='val', transforms=augmentation)
     
-    train_dataset = train_data_class(mode='train', transforms=augmentation)
+    
     train_dataloader = DataLoader(train_dataset, 
                                 batch_size=opt.batch_size, 
                                 shuffle=True, 
                                 num_workers=opt.num_workers)
 
-    val_dataset = train_data_class(mode='val', transforms=augmentation)
     val_dataloader = DataLoader(val_dataset,
                                 batch_size=opt.batch_size,
                                 shuffle=True,
@@ -100,65 +120,6 @@ def get_image_dataset(opt):
     dataset = {'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
     return dataset
 
-
-def get_multiple_datasets(opt, datasets=['ff', 'celeb', 'vfhq', 'dff']):
-
-    augmentation = T.Compose([
-        T.Resize((opt.image_size, opt.image_size)),
-        T.ToTensor(),
-        T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-        ])
-    
-    test_data_name = 'dfdc'
-    test_data_path = '/workspace/volume3/sohyun/dfdc_preprocessed'
-
-    dataset_mapping = {
-        'ff': FFImageDataset,
-        'celeb': CelebImageDataset,
-        'dfdc': DFDCImageDataset,
-        'vfhq': VFHQImageDataset,
-        'dff' : DFFImageDataset
-    }
-
-    # # Specify the dataset name
-    # train_data_name = opt.train_data_name
-    # assert train_data_name in dataset_mapping, f"Unsupported dataset name: {train_data_name}"
-    # assert test_data_name in dataset_mapping, f"Unsupported dataset name: {test_data_name}"
-
-    # Create the appropriate dataset class based on the name
-    # train_data_class = dataset_mapping[train_data_name]
-    test_data_class = dataset_mapping[test_data_name]
-    train_datasets = []
-    val_datasets = []
-
-    for dataset in datasets:
-        train_data_class = dataset_mapping[dataset]
-        train_dataset = train_data_class(mode='train', transforms=augmentation)
-        val_dataset = train_data_class(mode='val', transforms=augmentation)
-
-        train_datasets.append(train_dataset)
-        val_datasets.append(val_dataset)
-
-    train_dataset = torch.utils.data.ConcatDataset(train_datasets)
-    train_dataloader = DataLoader(train_dataset, 
-                                batch_size=opt.batch_size, 
-                                shuffle=True, 
-                                num_workers=opt.num_workers)
-
-    val_dataset = torch.utils.data.ConcatDataset(val_datasets)
-    val_dataloader = DataLoader(val_dataset,
-                                batch_size=opt.batch_size,
-                                shuffle=False,
-                                num_workers=opt.num_workers) 
-
-    test_dataset = test_data_class(mode='test', transforms=augmentation)
-    test_dataloader = DataLoader(test_dataset,
-                                batch_size=opt.batch_size,
-                                shuffle=False,
-                                num_workers=opt.num_workers)
-
-    dataset = {'train': train_dataloader, 'val': val_dataloader, 'test': test_dataloader}
-    return dataset
 
 class BaseImageDataset(Dataset):
     def __init__(self, name, path, mode='train', transforms=None):
@@ -198,24 +159,29 @@ class BaseImageDataset(Dataset):
             self.labels += self._get_labels(video_dir, final_video_keys)
             self.mtype_index += [i for _ in range(len(final_video_keys))]
 
+        if self.mode == 'train':
+            self._oversample()
+
+    def _oversample(self):
         ## OVERSAMPLING
         # Count the number of videos with label 0 and 1
-        if self.mode == 'train':
-            count_label_0 = self.labels.count(0)
-            count_label_1 = self.labels.count(1)
+        count_label_0 = self.labels.count(0)
+        count_label_1 = self.labels.count(1)
 
-            duplicateNum = count_label_1 // count_label_0 - 1
-            additional_samples = count_label_1 % count_label_0
+        duplicateNum = count_label_1 // count_label_0 - 1
+        additional_samples = count_label_1 % count_label_0
 
-            # Oversample video keys with label 0
-            real_videos = [video_dir for video_dir, label in zip(self.videos, self.labels) if label == 0]
-            oversampled_videos = real_videos * duplicateNum + random.sample(real_videos, additional_samples)
-            self.labels += [0] * (len(oversampled_videos))
+        # Oversample video keys with label 0
+        real_videos = [video_dir for video_dir, label in zip(self.videos, self.labels) if label == 0]
+        oversampled_videos = real_videos * duplicateNum + random.sample(real_videos, additional_samples)
+        self.labels += [0] * (len(oversampled_videos))
 
-            print(f"=> Oversampled REAL Data from Real : Fake {count_label_0} : {count_label_1} to {count_label_0 + len(oversampled_videos)} : {count_label_1}")
-            
-            self.mtype_index += [i for _ in range(len(self.videos), len(self.videos) + len(oversampled_videos))]
-            self.videos += [video_dir for video_dir in oversampled_videos]
+        # print(f'REAL: {count_label_0} : FAKE: {count_label_1} found')
+        # print(f'oversampled {len(oversampled_videos)}')
+
+        #This should be fixed ... mtype is not used anyway tho
+        #self.mtype_index += [self.mtype_index for _ in range(len(self.videos), len(self.videos) + len(oversampled_videos))]
+        self.videos += [video_dir for video_dir in oversampled_videos]         
 
     def __len__(self):
         return len(self.videos)
@@ -282,52 +248,52 @@ class FFImageDataset(BaseImageDataset):
         video_identity = int(video_identity)
         return video_identity
 
+    # use this as getitem function for identity-based triplets
+    def __getTriplets__(self, index):
+        video_dir = self.videos[index]
+        video_mtype = self._get_mtype(video_dir)
+        video_identity = self._get_identity(video_mtype, video_dir)
 
-    # def __getitem__(self, index):
-    #     video_dir = self.videos[index]
-    #     video_mtype = self._get_mtype(video_dir)
-    #     video_identity = self._get_identity(video_mtype, video_dir)
+        #remove .jpg and convert into int
+        current_label = self.labels[index]
+        positive_indices = []
+        negative_indices = []
+        negative_extras = []
 
-    #     #remove .jpg and convert into int
-    #     current_label = self.labels[index]
-    #     positive_indices = []
-    #     negative_indices = []
-    #     negative_extras = []
+        for i, label in enumerate(self.labels):
+            target_video = self.videos[i]
+            target_mtype = self._get_mtype(target_video)
+            target_id = self._get_identity(target_mtype, target_video)
 
-    #     for i, label in enumerate(self.labels):
-    #         target_video = self.videos[i]
-    #         target_mtype = self._get_mtype(target_video)
-    #         target_id = self._get_identity(target_mtype, target_video)
+            if label == current_label and target_id != video_identity:
+                positive_indices.append(i)
+            if label != current_label:
+                if target_id == video_identity:
+                    negative_indices.append(i)
+                else:
+                    negative_extras.append(i)
 
-    #         if label == current_label and target_id != video_identity:
-    #             positive_indices.append(i)
-    #         if label != current_label:
-    #             if target_id == video_identity:
-    #                 negative_indices.append(i)
-    #             else:
-    #                 negative_extras.append(i)
-
-    #     if len(negative_indices) == 0:
-    #         #print(f"Data: {video_dir}\n => negative pairs not exist, using negative with different id")
-    #         negative_indices = negative_extras
+        if len(negative_indices) == 0:
+            #print(f"Data: {video_dir}\n => negative pairs not exist, using negative with different id")
+            negative_indices = negative_extras
         
-    #     positive_index = random.choice(positive_indices)
-    #     positive_video_dir = self.videos[positive_index]
+        positive_index = random.choice(positive_indices)
+        positive_video_dir = self.videos[positive_index]
 
-    #     negative_index = random.choice(negative_indices)
-    #     negative_video_dir = self.videos[negative_index]
+        negative_index = random.choice(negative_indices)
+        negative_video_dir = self.videos[negative_index]
 
-    #     anchor_frame = sampleFrame(video_dir, self.transforms)
-    #     positive_frame = sampleFrame(positive_video_dir, self.transforms)
-    #     negative_frame = sampleFrame(negative_video_dir, self.transforms)
+        anchor_frame = sampleFrame(video_dir, self.transforms)
+        positive_frame = sampleFrame(positive_video_dir, self.transforms)
+        negative_frame = sampleFrame(negative_video_dir, self.transforms)
 
-    #     frames = [anchor_frame, positive_frame, negative_frame]
+        frames = [anchor_frame, positive_frame, negative_frame]
 
-    #     data = {'frames': frames, 'label': self.labels[index]}
-    #     return data
+        data = {'frames': frames, 'label': self.labels[index]}
+        return data
 
 class DFFImageDataset(BaseImageDataset):
-    def __init__(self, path='/workspace/dataset1/dff_preprocessed', mode='train', transforms=None):
+    def __init__(self, path='/workspace/dff', mode='train', transforms=None):
         super().__init__('dff', path, mode, transforms)
         folders = os.listdir(os.path.join(self.path, 'manipulated_videos'))
 
