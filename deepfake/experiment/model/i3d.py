@@ -392,7 +392,7 @@ class InceptionI3dSupCon(InceptionI3dEncoder):
 
 class DANN_I3D(InceptionI3d):
     def __init__(self):
-        super(DANN_I3D, self).__init__()
+        super(DANN_I3D, self).__init__(num_classes=2)
         self.class_logits = Unit3D(in_channels=384+384+128+128, output_channels=2,
                              kernel_shape=[1, 1, 1],
                              padding=0,
