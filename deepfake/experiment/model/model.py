@@ -23,3 +23,12 @@ class DANN_InceptionV3(nn.Module):
         domain_output = self.domain_classifier(reverse_feature)
 
         return class_output, domain_output
+
+    def extract_features(self, input_data):
+        input_data = input_data.expand(input_data.shape[0], 3, 299, 299)
+        try:
+            feature = self.feature(input_data).logits
+        except:
+            feature = self.feature(input_data)
+
+        return feature
