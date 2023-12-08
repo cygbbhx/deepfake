@@ -188,6 +188,21 @@ class FFVideoDataset(BaseVideoDataset):
     def _get_labels(self, video_dir, video_keys):
         return [0 if video_dir.find('original') >= 0 else 1 for _ in range(len(video_keys))]
 
+    def _get_mtype(self, src_idx):
+        video_dir = self.videos[src_idx]
+        video_mtype = 0
+        for i, mtype in enumerate(self.mtype):
+            if video_dir.find(mtype) >= 0:
+                video_mtype = i
+                break        
+        return video_mtype
+    
+    def __getitem__(self, index):
+        data = super().__getitem__(index)
+        data['mtype'] = self._get_mtype(data['video'])
+
+        return data
+
 class DFFVideoDataset(BaseVideoDataset):
     def __init__(self, mode='train', transforms=None, **kwargs):
         super().__init__('dff', mode, transforms, **kwargs)

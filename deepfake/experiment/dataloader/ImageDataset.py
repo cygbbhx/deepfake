@@ -145,8 +145,6 @@ class BaseImageDataset(Dataset):
         self.mtype = None  
         self.iter_path = None 
         
-        # load data after init
-        # self._load_data()
 
     def _load_data(self):
         assert self.iter_path is not None, "video directories are not set"
@@ -251,6 +249,13 @@ class FFImageDataset(BaseImageDataset):
 
         video_identity = int(video_identity)
         return video_identity
+
+    def __getitem__(self, index):
+        data = super().__getitem__(index)
+        video_dir = self.videos[index]
+        data['mtype'] = self._get_mtype(video_dir)
+
+        return data
 
     # use this as getitem function for identity-based triplets
     def __getTriplets__(self, index):
